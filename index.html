@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Plenum / Fan – V1 System Curve UI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root{
+      --bg:#f5f5f7;
+      --panel:#ffffff;
+      --border:#d0d5dd;
+      --ink:#111827;
+      --muted:#6b7280;
+      --accent:#0b73c8;
+      --r:12px;
+      --pad:14px;
+      --gap:14px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      background:var(--bg);
+      color:var(--ink);
+      font-size:14px;
+    }
+    header{
+      padding:10px 16px;
+      border-bottom:1px solid var(--border);
+      background:#f9fafb;
+    }
+    header h1{
+      margin:0;
+      font-size:18px;
+      letter-spacing:.02em;
+    }
+    header p{
+      margin:4px 0 0;
+      color:var(--muted);
+      font-size:13px;
+    }
+    main{
+      padding:var(--pad);
+      display:flex;
+      flex-wrap:wrap;
+      gap:var(--gap);
+      align-items:flex-start;
+    }
+    .col{
+      display:flex;
+      flex-direction:column;
+      gap:var(--gap);
+    }
+    .col-left{flex:0 0 340px; max-width:100%;}
+    .col-mid{flex:1 1 420px; min-width:320px;}
+    .col-right{flex:0 0 360px; max-width:100%;}
+    .panel{
+      background:var(--panel);
+      border-radius:var(--r);
+      border:1px solid var(--border);
+      padding:var(--pad);
+      box-shadow:0 1px 2px rgba(15,23,42,0.04);
+    }
+    .panel h2{
+      margin:0 0 8px;
+      font-size:15px;
+      font-weight:600;
+    }
+    .panel small{
+      color:var(--muted);
+    }
+    .grid-2{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:10px 12px;
+      margin-top:8px;
+    }
+    .field{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+    }
+    .field label{
+      font-size:12px;
+      color:var(--muted);
+    }
+    .field input, .field select{
+      padding:4px 6px;
+      border-radius:6px;
+      border:1px solid var(--border);
+      font-size:13px;
+    }
+    .section-label{
+      margin-top:8px;
+      font-size:12px;
+      font-weight:600;
+      text-transform:uppercase;
+      letter-spacing:.06em;
+      color:var(--muted);
+    }
+    .btn-row{
+      display:flex;
+      justify-content:flex-end;
+      gap:8px;
+      margin-top:10px;
+      flex-wrap:wrap;
+    }
+    button{
+      border-radius:999px;
+      border:1px solid transparent;
+      padding:6px 12px;
+      font-size:13px;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      background:var(--accent);
+      color:#fff;
+    }
+    button.secondary{
+      background:#fff;
+      color:var(--ink);
+      border-color:var(--border);
+    }
+    button:disabled{
+      opacity:.5;
+      cursor:default;
+    }
+    table{
+      width:100%;
+      border-collapse:collapse;
+      margin-top:6px;
+      font-size:12px;
+    }
+    th, td{
+      border:1px solid #e5e7eb;
+      padding:2px 4px;
+      text-align:right;
+    }
+    th{
+      background:#f3f4f6;
+      font-weight:500;
+    }
+    td input{
+      width:100%;
+      border:none;
+      outline:none;
+      text-align:right;
+      font-size:12px;
+      padding:2px 2px;
+      background:transparent;
+    }
+    .results-grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:6px 12px;
+      margin-top:6px;
+      font-size:13px;
+    }
+    .result-label{
+      color:var(--muted);
+    }
+    .result-value{
+      text-align:right;
+      font-feature-settings:"tnum" 1;
+    }
+    canvas{
+      max-width:100%;
+    }
+    .schematic-legend{
+      margin-top:8px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    @media (max-width:1100px){
+      .col-left{flex:1 1 320px;}
+      .col-right{flex:1 1 320px;}
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Plenum / Fan Matching – V1 UI</h1>
+  <p>Fan curve + plenum / heat-sink geometry → operating point and velocity map (later).</p>
+</header>
+
+<main>
+  <!-- LEFT COLUMN: INPUTS -->
+  <section class="col col-left">
+    <div class="panel">
+      <h2>1. Air & Units</h2>
+      <div class="grid-2">
+        <div class="field">
+          <label for="units">Units</label>
+          <select id="units">
+            <option value="si">SI (m, Pa, kg/s)</option>
+            <option value="ip">IP (in, inH₂O, cfm)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="Tair">Air Temp (°C)</label>
+          <input id="Tair" type="number" value="25">
+        </div>
+        <div class="field">
+          <label for="rho">Density ρ (kg/m³)</label>
+          <input id="rho" type="number" value="1.184">
+        </div>
+        <div class="field">
+          <label for="mu">Viscosity μ (Pa·s)</label>
+          <input id="mu" type="number" value="1.85e-5" step="1e-6">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>2. Plenum & Inlet</h2>
+      <small>All geometry in current length units.</small>
+      <div class="section-label">Plenum</div>
+      <div class="grid-2">
+        <div class="field">
+          <label for="plenumW">Width W</label>
+          <input id="plenumW" type="number" value="0.20" step="0.01">
+        </div>
+        <div class="field">
+          <label for="plenumH">Height H</label>
+          <input id="plenumH" type="number" value="0.05" step="0.005">
+        </div>
+        <div class="field">
+          <label for="plenumL">Length L</label>
+          <input id="plenumL" type="number" value="0.30" step="0.01">
+        </div>
+      </div>
+
+      <div class="section-label">Fan / Blower Inlet</div>
+      <div class="grid-2">
+        <div class="field">
+          <label for="inletW">Inlet width w</label>
+          <input id="inletW" type="number" value="0.06" step="0.005">
+        </div>
+        <div class="field">
+          <label for="inletH">Inlet height h</label>
+          <input id="inletH" type="number" value="0.06" step="0.005">
+        </div>
+        <div class="field">
+          <label for="inletX">Inlet x from start</label>
+          <input id="inletX" type="number" value="0.10" step="0.01">
+        </div>
+        <div class="field">
+          <label for="inletY">Inlet vertical offset</label>
+          <input id="inletY" type="number" value="0.0" step="0.005">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>3. Heat Sink (Finned)</h2>
+      <small>For now just used for channel geometry and pressure drop.</small>
+      <div class="grid-2">
+        <div class="field">
+          <label for="b">Fin height b</label>
+          <input id="b" type="number" value="0.04" step="0.002">
+        </div>
+        <div class="field">
+          <label for="tfin">Fin thickness t</label>
+          <input id="tfin" type="number" value="0.001" step="0.0005">
+        </div>
+        <div class="field">
+          <label for="sfin">Fin spacing s</label>
+          <input id="sfin" type="number" value="0.003" step="0.0005">
+        </div>
+        <div class="field">
+          <label for="Lfin">Fin length L<sub>f</sub></label>
+          <input id="Lfin" type="number" value="0.25" step="0.01">
+        </div>
+        <div class="field">
+          <label for="xHS">HS lead edge x from inlet start</label>
+          <input id="xHS" type="number" value="0.03" step="0.01">
+        </div>
+        <div class="field">
+          <label for="WHS">HS width (if &lt; W)</label>
+          <input id="WHS" type="number" value="0.20" step="0.01">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>4. Fan Curve</h2>
+      <small>User-entered fan curve points (Q, Δp). Units follow selection.</small>
+      <table id="fanTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Q</th>
+            <th>Δp</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Some starter rows -->
+          <tr><td>1</td><td><input value="0"></td><td><input value="400"></td></tr>
+          <tr><td>2</td><td><input value="0.02"></td><td><input value="350"></td></tr>
+          <tr><td>3</td><td><input value="0.04"></td><td><input value="280"></td></tr>
+          <tr><td>4</td><td><input value="0.06"></td><td><input value="190"></td></tr>
+          <tr><td>5</td><td><input value="0.08"></td><td><input value="90"></td></tr>
+          <tr><td>6</td><td><input value="0.10"></td><td><input value="0"></td></tr>
+        </tbody>
+      </table>
+      <div class="btn-row">
+        <button type="button" class="secondary" id="addRowBtn">+ Row</button>
+        <button type="button" class="secondary" id="delRowBtn">– Row</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- MIDDLE COLUMN: RESULTS & CURVES -->
+  <section class="col col-mid">
+    <div class="panel">
+      <h2>5. Solve</h2>
+      <small>Version 1: system curve & operating point (physics to be added).</small>
+      <div class="btn-row" style="justify-content:flex-start;">
+        <button type="button" id="solveBtn">Solve (placeholder)</button>
+      </div>
+
+      <div class="section-label">Key Results (placeholder)</div>
+      <div class="results-grid" id="resultsGrid">
+        <div class="result-label">Flow rate Q*</div>
+        <div class="result-value" id="Qstar">—</div>
+        <div class="result-label">Back pressure Δp*</div>
+        <div class="result-value" id="Dpstar">—</div>
+        <div class="result-label">Inlet velocity V<sub>in</sub></div>
+        <div class="result-value" id="Vin">—</div>
+        <div class="result-label">Channel velocity V<sub>ch,avg</sub></div>
+        <div class="result-value" id="Vch">—</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>6. Fan & System Curves</h2>
+      <small>Fan curve from table; system curve from pressure-drop model (soon).</small>
+      <canvas id="curveChart" height="260"></canvas>
+    </div>
+  </section>
+
+  <!-- RIGHT COLUMN: SCHEMATIC -->
+  <section class="col col-right">
+    <div class="panel">
+      <h2>7. Geometry Schematic</h2>
+      <small>Not to scale; updates with current dimensions.</small>
+      <canvas id="schematicCanvas" width="320" height="220"></canvas>
+      <div class="schematic-legend">
+        ▭ Outer box: plenum (W × H × L) <br>
+        ▧ Inner square: fan/blower inlet (w × h) <br>
+        █ Lower hatched region: finned heat sink
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  // --- Fan table row add/delete ---
+  document.getElementById('addRowBtn').addEventListener('click', () => {
+    const tbody = document.querySelector('#fanTable tbody');
+    const idx = tbody.rows.length + 1;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${idx}</td><td><input value=""></td><td><input value=""></td>`;
+    tbody.appendChild(tr);
+    refreshFanChart();
+  });
+
+  document.getElementById('delRowBtn').addEventListener('click', () => {
+    const tbody = document.querySelector('#fanTable tbody');
+    if (tbody.rows.length > 1) tbody.deleteRow(-1);
+    refreshFanChart();
+  });
+
+  // --- Placeholder solve button ---
+  document.getElementById('solveBtn').addEventListener('click', () => {
+    // For now just read inlet area and make up a Q* so you can see wiring.
+    const wIn = parseFloat(document.getElementById('inletW').value) || 0;
+    const hIn = parseFloat(document.getElementById('inletH').value) || 0;
+    const Ain = wIn * hIn;
+    // Fake operating point:
+    const Qstar = Ain * 5.0; // pretend 5 m/s through inlet
+    const Dpstar = 250;      // Pa, arbitrary
+    const Vin = Ain > 0 ? Qstar / Ain : 0;
+
+    // Finned channels
+    const W = parseFloat(document.getElementById('WHS').value) || 0;
+    const s = parseFloat(document.getElementById('sfin').value) || 0;
+    const t = parseFloat(document.getElementById('tfin').value) || 0;
+    const b  = parseFloat(document.getElementById('b').value) || 0;
+    let Nch = 0;
+    if (s + t > 0 && W > 0) {
+      Nch = Math.floor((W + s) / (s + t)); // rough
+    }
+    const AchTot = Nch * s * b;
+    const Vch = AchTot > 0 ? Qstar / AchTot : 0;
+
+    document.getElementById('Qstar').textContent = Qstar.toExponential(3);
+    document.getElementById('Dpstar').textContent = Dpstar.toFixed(1);
+    document.getElementById('Vin').textContent   = Vin.toFixed(2);
+    document.getElementById('Vch').textContent   = isFinite(Vch) ? Vch.toFixed(2) : '—';
+
+    // Update chart with a dummy system curve using this Q*
+    updateSystemCurve(Qstar, Dpstar);
+  });
+
+  // --- Chart.js: fan + system curves ---
+  const ctx = document.getElementById('curveChart').getContext('2d');
+  const chartConfig = {
+    type: 'line',
+    data: {
+      datasets: [
+        {
+          label: 'Fan curve',
+          data: [],
+          borderWidth: 2,
+          tension: 0.2,
+          pointRadius: 2
+        },
+        {
+          label: 'System curve (placeholder)',
+          data: [],
+          borderWidth: 2,
+          borderDash: [4,4],
+          tension: 0.2,
+          pointRadius: 0
+        },
+        {
+          label: 'Operating point',
+          data: [],
+          type: 'scatter',
+          pointRadius: 4,
+          pointStyle: 'circle'
+        }
+      ]
+    },
+    options: {
+      responsive:true,
+      maintainAspectRatio:false,
+      scales: {
+        x: {
+          type: 'linear',
+          title:{display:true,text:'Flow Q'},
+          ticks:{maxTicksLimit:6}
+        },
+        y: {
+          title:{display:true,text:'Δp'},
+          ticks:{maxTicksLimit:6}
+        }
+      },
+      plugins:{
+        legend:{display:true,position:'bottom'}
+      }
+    }
+  };
+  const curveChart = new Chart(ctx, chartConfig);
+
+  function readFanTable() {
+    const tbody = document.querySelector('#fanTable tbody');
+    const pts = [];
+    for (const row of tbody.rows) {
+      const Q = parseFloat(row.cells[1].querySelector('input').value);
+      const dp = parseFloat(row.cells[2].querySelector('input').value);
+      if (!isNaN(Q) && !isNaN(dp)) pts.push({x:Q, y:dp});
+    }
+    pts.sort((a,b)=>a.x-b.x);
+    return pts;
+  }
+
+  function refreshFanChart() {
+    const pts = readFanTable();
+    chartConfig.data.datasets[0].data = pts;
+    curveChart.update();
+  }
+
+  function updateSystemCurve(Qstar, Dpstar) {
+    const fanPts = readFanTable();
+    if (fanPts.length === 0) return;
+
+    const Qmax = fanPts[fanPts.length-1].x || 1;
+    const sysPts = [];
+    const n = 20;
+    for (let i=0;i<=n;i++){
+      const Q = Qmax * i/n;
+      const dp = Dpstar * (Q / Qstar) ** 2; // pure quadratic placeholder
+      sysPts.push({x:Q,y:dp});
+    }
+    chartConfig.data.datasets[1].data = sysPts;
+    chartConfig.data.datasets[2].data = [{x:Qstar,y:Dpstar}];
+    curveChart.update();
+  }
+
+  refreshFanChart();
+
+  // --- Schematic drawing ---
+  function drawSchematic(){
+    const c = document.getElementById('schematicCanvas');
+    const g = c.getContext('2d');
+    g.clearRect(0,0,c.width,c.height);
+
+    const W = parseFloat(document.getElementById('plenumW').value) || 0.2;
+    const H = parseFloat(document.getElementById('plenumH').value) || 0.05;
+    const L = parseFloat(document.getElementById('plenumL').value) || 0.3;
+    const wIn = parseFloat(document.getElementById('inletW').value) || 0.06;
+    const hIn = parseFloat(document.getElementById('inletH').value) || 0.06;
+    const xHS = parseFloat(document.getElementById('xHS').value) || 0.03;
+    const Lf  = parseFloat(document.getElementById('Lfin').value) || 0.25;
+    const b   = parseFloat(document.getElementById('b').value) || 0.04;
+
+    // Normalize to canvas (x along L, y vertical)
+    const margin = 20;
+    const scaleX = (c.width - 2*margin) / L;
+    const scaleY = (c.height - 2*margin) / H;
+
+    // Plenum
+    g.strokeStyle = "#111";
+    g.lineWidth = 1.2;
+    const x0 = margin, y0 = margin;
+    const Wpix = L * scaleX;
+    const Hpix = H * scaleY;
+    g.strokeRect(x0, y0, Wpix, Hpix);
+
+    // Inlet (just draw centered in height for now)
+    const AinW = wIn * scaleX;
+    const AinH = hIn * scaleY;
+    const xin = x0 + (0.5*L - 0.5*wIn)*scaleX; // centered in x for now
+    const yin = y0 + (0.5*H - 0.5*hIn)*scaleY;
+    g.fillStyle = "#d1d5db";
+    g.fillRect(xin, yin, AinW, AinH);
+    g.strokeRect(xin, yin, AinW, AinH);
+    g.fillStyle = "#374151";
+    g.font = "10px system-ui";
+    g.fillText("inlet", xin+4, yin+12);
+
+    // Heat sink fins region (bottom)
+    const xhsPix = x0 + xHS*scaleX;
+    const LhsPix = Math.min(Lf, L-xHS) * scaleX;
+    const bPix = b * scaleY;
+    const yBase = y0 + Hpix;
+    g.fillStyle = "#e5e7eb";
+    g.fillRect(xhsPix, yBase - bPix, LhsPix, bPix);
+    g.strokeRect(xhsPix, yBase - bPix, LhsPix, bPix);
+
+    // Draw a few vertical hatch lines for fins
+    g.strokeStyle = "#9ca3af";
+    const nFinDraw = 10;
+    for(let i=0;i<=nFinDraw;i++){
+      const xf = xhsPix + (LhsPix * i / nFinDraw);
+      g.beginPath();
+      g.moveTo(xf, yBase - bPix);
+      g.lineTo(xf, yBase);
+      g.stroke();
+    }
+
+    g.fillStyle = "#374151";
+    g.fillText("fins", xhsPix+4, yBase - bPix - 4);
+
+    // Flow direction arrow
+    g.strokeStyle = "#111827";
+    g.beginPath();
+    g.moveTo(x0+10, y0+Hpix+12);
+    g.lineTo(x0+Wpix-10, y0+Hpix+12);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(x0+Wpix-10, y0+Hpix+12);
+    g.lineTo(x0+Wpix-16, y0+Hpix+8);
+    g.lineTo(x0+Wpix-16, y0+Hpix+16);
+    g.closePath();
+    g.fill();
+    g.fillText("flow (x)", x0+Wpix/2-18, y0+Hpix+24);
+  }
+
+  // Redraw schematic when key inputs change
+  const redrawIds = ['plenumW','plenumH','plenumL','inletW','inletH','xHS','Lfin','b'];
+  redrawIds.forEach(id=>{
+    document.getElementById(id).addEventListener('input', drawSchematic);
+  });
+  drawSchematic();
+</script>
+</body>
+</html>
