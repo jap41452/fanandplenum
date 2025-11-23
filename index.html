@@ -45,16 +45,24 @@
       display:flex;
       flex-wrap:wrap;
       gap:var(--gap);
-      align-items:flex-start;
+      align-items:flex-start; /* keep left-aligned */
     }
     .col{
       display:flex;
       flex-direction:column;
       gap:var(--gap);
     }
-    .col-left{flex:0 0 340px; max-width:100%;}
-    .col-mid{flex:1 1 420px; min-width:320px;}
-    .col-right{flex:0 0 360px; max-width:100%;}
+    /* LEFT column: 200px wide */
+    .col-left{
+      flex:0 0 200px;
+      max-width:200px;
+    }
+    /* MIDDLE column: 600px wide */
+    .col-mid{
+      flex:0 0 600px;
+      max-width:600px;
+      min-width:320px;
+    }
     .panel{
       background:var(--panel);
       border-radius:var(--r);
@@ -169,13 +177,18 @@
       max-width:100%;
     }
     .schematic-legend{
-      margin-top:8px;
-      font-size:12px;
+      margin-top:6px;
+      font-size:11px;
       color:var(--muted);
     }
-    @media (max-width:1100px){
-      .col-left{flex:1 1 320px;}
-      .col-right{flex:1 1 320px;}
+    /* Fan curve panel height limit */
+    .fan-panel{
+      max-height:600px;
+      overflow-y:auto;
+    }
+    @media (max-width:860px){
+      .col-left{flex:1 1 200px; max-width:none;}
+      .col-mid{flex:1 1 320px; max-width:none;}
     }
   </style>
 </head>
@@ -186,8 +199,9 @@
 </header>
 
 <main>
-  <!-- LEFT COLUMN: INPUTS -->
+  <!-- LEFT COLUMN: PANELS 1,2,3,4,7,8 -->
   <section class="col col-left">
+    <!-- 1. Air & Units -->
     <div class="panel">
       <h2>1. Air & Units</h2>
       <div class="grid-2">
@@ -213,9 +227,10 @@
       </div>
     </div>
 
+    <!-- 2. Plenum & Inlet -->
     <div class="panel">
       <h2>2. Plenum & Inlet</h2>
-      <small>All geometry in current length units.</small>
+      <small>Geometry in current length units.</small>
       <div class="section-label">Plenum</div>
       <div class="grid-2">
         <div class="field">
@@ -253,9 +268,10 @@
       </div>
     </div>
 
+    <!-- 3. Heat Sink -->
     <div class="panel">
       <h2>3. Heat Sink (Finned)</h2>
-      <small>For now just used for channel geometry and pressure drop.</small>
+      <small>Used for channel geometry and pressure drop.</small>
       <div class="grid-2">
         <div class="field">
           <label for="b">Fin height b</label>
@@ -274,7 +290,7 @@
           <input id="Lfin" type="number" value="0.25" step="0.01">
         </div>
         <div class="field">
-          <label for="xHS">HS lead edge x from inlet start</label>
+          <label for="xHS">HS lead edge x</label>
           <input id="xHS" type="number" value="0.03" step="0.01">
         </div>
         <div class="field">
@@ -284,25 +300,26 @@
       </div>
     </div>
 
+    <!-- 4. Fan Curve Table -->
     <div class="panel">
       <h2>4. Fan Curve</h2>
-      <small>User-entered fan curve points (Q, Δp). Units follow selection.</small>
+      <small>Fan curve points (Q, Δp). Units follow selection.</small>
       <table id="fanTable">
         <thead>
-          <tr>
-            <th>#</th>
-            <th>Q</th>
-            <th>Δp</th>
-          </tr>
+        <tr>
+          <th>#</th>
+          <th>Q</th>
+          <th>Δp</th>
+        </tr>
         </thead>
         <tbody>
-          <!-- Some starter rows -->
-          <tr><td>1</td><td><input value="0"></td><td><input value="400"></td></tr>
-          <tr><td>2</td><td><input value="0.02"></td><td><input value="350"></td></tr>
-          <tr><td>3</td><td><input value="0.04"></td><td><input value="280"></td></tr>
-          <tr><td>4</td><td><input value="0.06"></td><td><input value="190"></td></tr>
-          <tr><td>5</td><td><input value="0.08"></td><td><input value="90"></td></tr>
-          <tr><td>6</td><td><input value="0.10"></td><td><input value="0"></td></tr>
+        <!-- Starter rows -->
+        <tr><td>1</td><td><input value="0"></td><td><input value="400"></td></tr>
+        <tr><td>2</td><td><input value="0.02"></td><td><input value="350"></td></tr>
+        <tr><td>3</td><td><input value="0.04"></td><td><input value="280"></td></tr>
+        <tr><td>4</td><td><input value="0.06"></td><td><input value="190"></td></tr>
+        <tr><td>5</td><td><input value="0.08"></td><td><input value="90"></td></tr>
+        <tr><td>6</td><td><input value="0.10"></td><td><input value="0"></td></tr>
         </tbody>
       </table>
       <div class="btn-row">
@@ -310,10 +327,34 @@
         <button type="button" class="secondary" id="delRowBtn">– Row</button>
       </div>
     </div>
+
+    <!-- 7. Top View Schematic -->
+    <div class="panel">
+      <h2>7. Top View</h2>
+      <small>Schematic top/side view (not to scale).</small>
+      <canvas id="schematicCanvas" width="180" height="140"></canvas>
+      <div class="schematic-legend">
+        ▭ Plenum outline<br>
+        ▧ Inlet opening<br>
+        █ Finned region (projected)
+      </div>
+    </div>
+
+    <!-- 8. End View Schematic -->
+    <div class="panel">
+      <h2>8. End View</h2>
+      <small>End view of plenum & fins (not to scale).</small>
+      <canvas id="schematicEndCanvas" width="180" height="140"></canvas>
+      <div class="schematic-legend">
+        ▭ Plenum (W × H) end view<br>
+        █ Fins up from base (height b)
+      </div>
+    </div>
   </section>
 
-  <!-- MIDDLE COLUMN: RESULTS & CURVES -->
+  <!-- MIDDLE COLUMN: PANELS 5 & 6 -->
   <section class="col col-mid">
+    <!-- 5. Solve -->
     <div class="panel">
       <h2>5. Solve</h2>
       <small>Version 1: system curve & operating point (physics to be added).</small>
@@ -334,24 +375,11 @@
       </div>
     </div>
 
-    <div class="panel">
+    <!-- 6. Fan & System Curves -->
+    <div class="panel fan-panel">
       <h2>6. Fan & System Curves</h2>
       <small>Fan curve from table; system curve from pressure-drop model (soon).</small>
-      <canvas id="curveChart" height="260"></canvas>
-    </div>
-  </section>
-
-  <!-- RIGHT COLUMN: SCHEMATIC -->
-  <section class="col col-right">
-    <div class="panel">
-      <h2>7. Geometry Schematic</h2>
-      <small>Not to scale; updates with current dimensions.</small>
-      <canvas id="schematicCanvas" width="320" height="220"></canvas>
-      <div class="schematic-legend">
-        ▭ Outer box: plenum (W × H × L) <br>
-        ▧ Inner square: fan/blower inlet (w × h) <br>
-        █ Lower hatched region: finned heat sink
-      </div>
+      <canvas id="curveChart" height="360"></canvas>
     </div>
   </section>
 </main>
@@ -476,7 +504,7 @@
 
   function updateSystemCurve(Qstar, Dpstar) {
     const fanPts = readFanTable();
-    if (fanPts.length === 0) return;
+    if (fanPts.length === 0 || !isFinite(Qstar) || Qstar <= 0) return;
 
     const Qmax = fanPts[fanPts.length-1].x || 1;
     const sysPts = [];
@@ -493,7 +521,8 @@
 
   refreshFanChart();
 
-  // --- Schematic drawing ---
+  // --- Schematic drawings ---
+
   function drawSchematic(){
     const c = document.getElementById('schematicCanvas');
     const g = c.getContext('2d');
@@ -508,32 +537,28 @@
     const Lf  = parseFloat(document.getElementById('Lfin').value) || 0.25;
     const b   = parseFloat(document.getElementById('b').value) || 0.04;
 
-    // Normalize to canvas (x along L, y vertical)
-    const margin = 20;
+    const margin = 10;
     const scaleX = (c.width - 2*margin) / L;
     const scaleY = (c.height - 2*margin) / H;
 
-    // Plenum
+    // Plenum rectangle (L × H)
     g.strokeStyle = "#111";
-    g.lineWidth = 1.2;
+    g.lineWidth = 1;
     const x0 = margin, y0 = margin;
     const Wpix = L * scaleX;
     const Hpix = H * scaleY;
     g.strokeRect(x0, y0, Wpix, Hpix);
 
-    // Inlet (just draw centered in height for now)
+    // Inlet (centered in height for now)
     const AinW = wIn * scaleX;
     const AinH = hIn * scaleY;
-    const xin = x0 + (0.5*L - 0.5*wIn)*scaleX; // centered in x for now
+    const xin = x0 + (0.5*L - 0.5*wIn)*scaleX;
     const yin = y0 + (0.5*H - 0.5*hIn)*scaleY;
     g.fillStyle = "#d1d5db";
     g.fillRect(xin, yin, AinW, AinH);
     g.strokeRect(xin, yin, AinW, AinH);
-    g.fillStyle = "#374151";
-    g.font = "10px system-ui";
-    g.fillText("inlet", xin+4, yin+12);
 
-    // Heat sink fins region (bottom)
+    // Heat sink region at bottom
     const xhsPix = x0 + xHS*scaleX;
     const LhsPix = Math.min(Lf, L-xHS) * scaleX;
     const bPix = b * scaleY;
@@ -542,9 +567,9 @@
     g.fillRect(xhsPix, yBase - bPix, LhsPix, bPix);
     g.strokeRect(xhsPix, yBase - bPix, LhsPix, bPix);
 
-    // Draw a few vertical hatch lines for fins
+    // Few fins as hatch
     g.strokeStyle = "#9ca3af";
-    const nFinDraw = 10;
+    const nFinDraw = 6;
     for(let i=0;i<=nFinDraw;i++){
       const xf = xhsPix + (LhsPix * i / nFinDraw);
       g.beginPath();
@@ -552,31 +577,67 @@
       g.lineTo(xf, yBase);
       g.stroke();
     }
-
-    g.fillStyle = "#374151";
-    g.fillText("fins", xhsPix+4, yBase - bPix - 4);
-
-    // Flow direction arrow
-    g.strokeStyle = "#111827";
-    g.beginPath();
-    g.moveTo(x0+10, y0+Hpix+12);
-    g.lineTo(x0+Wpix-10, y0+Hpix+12);
-    g.stroke();
-    g.beginPath();
-    g.moveTo(x0+Wpix-10, y0+Hpix+12);
-    g.lineTo(x0+Wpix-16, y0+Hpix+8);
-    g.lineTo(x0+Wpix-16, y0+Hpix+16);
-    g.closePath();
-    g.fill();
-    g.fillText("flow (x)", x0+Wpix/2-18, y0+Hpix+24);
   }
 
-  // Redraw schematic when key inputs change
-  const redrawIds = ['plenumW','plenumH','plenumL','inletW','inletH','xHS','Lfin','b'];
+  function drawEndSchematic(){
+    const c = document.getElementById('schematicEndCanvas');
+    const g = c.getContext('2d');
+    g.clearRect(0,0,c.width,c.height);
+
+    const W = parseFloat(document.getElementById('plenumW').value) || 0.2;
+    const H = parseFloat(document.getElementById('plenumH').value) || 0.05;
+    const b = parseFloat(document.getElementById('b').value) || 0.04;
+    const WHS = parseFloat(document.getElementById('WHS').value) || W;
+
+    const margin = 10;
+    const scaleX = (c.width - 2*margin) / W;
+    const scaleY = (c.height - 2*margin) / H;
+
+    const x0 = margin, y0 = margin;
+    const Wpix = W * scaleX;
+    const Hpix = H * scaleY;
+
+    // Plenum end rectangle (W × H)
+    g.strokeStyle = "#111";
+    g.lineWidth = 1;
+    g.strokeRect(x0, y0, Wpix, Hpix);
+
+    // Finned region along bottom
+    const bPix = Math.min(b, H) * scaleY;
+    const WfinPix = Math.min(WHS, W) * scaleX;
+    const xFin0 = x0 + (Wpix - WfinPix)/2;
+    const yBase = y0 + Hpix;
+    g.fillStyle = "#e5e7eb";
+    g.fillRect(xFin0, yBase - bPix, WfinPix, bPix);
+    g.strokeRect(xFin0, yBase - bPix, WfinPix, bPix);
+
+    // simple vertical fin lines
+    g.strokeStyle = "#9ca3af";
+    const nFin = 6;
+    for(let i=0;i<=nFin;i++){
+      const xf = xFin0 + (WfinPix * i / nFin);
+      g.beginPath();
+      g.moveTo(xf, yBase - bPix);
+      g.lineTo(xf, yBase);
+      g.stroke();
+    }
+  }
+
+  function redrawSchematics(){
+    drawSchematic();
+    drawEndSchematic();
+  }
+
+  const redrawIds = [
+    'plenumW','plenumH','plenumL',
+    'inletW','inletH',
+    'xHS','Lfin','b','WHS'
+  ];
   redrawIds.forEach(id=>{
-    document.getElementById(id).addEventListener('input', drawSchematic);
+    document.getElementById(id).addEventListener('input', redrawSchematics);
   });
-  drawSchematic();
+  redrawSchematics();
 </script>
 </body>
 </html>
+
