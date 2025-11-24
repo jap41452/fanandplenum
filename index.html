@@ -45,7 +45,7 @@
       display:flex;
       flex-wrap:wrap;
       gap:var(--gap);
-      align-items:flex-start; /* keep left-aligned */
+      align-items:flex-start; /* left-aligned */
     }
     .col{
       display:flex;
@@ -195,7 +195,7 @@
 <body>
 <header>
   <h1>Plenum / Fan Matching – V1 UI</h1>
-  <p>Fan curve + plenum / heat-sink geometry → operating point and velocity map (later).</p>
+  <p>Fan curve + plenum / heat-sink geometry → operating point and average velocities.</p>
 </header>
 
 <main>
@@ -208,7 +208,7 @@
         <div class="field">
           <label for="units">Units</label>
           <select id="units">
-            <option value="si">SI (m, Pa, kg/s)</option>
+            <option value="si">SI (m, Pa, m³/s)</option>
             <option value="ip">IP (in, inH₂O, cfm)</option>
           </select>
         </div>
@@ -334,7 +334,7 @@
       <small>Schematic top/side view (not to scale).</small>
       <canvas id="schematicCanvas" width="180" height="140"></canvas>
       <div class="schematic-legend">
-        ▭ Plenum outline<br>
+        ▭ Plenum outline (L × H)<br>
         ▧ Inlet opening<br>
         █ Finned region (projected)
       </div>
@@ -357,12 +357,12 @@
     <!-- 5. Solve -->
     <div class="panel">
       <h2>5. Solve</h2>
-      <small>Version 1: system curve & operating point (physics to be added).</small>
+      <small>Version 1: system curve & operating point.</small>
       <div class="btn-row" style="justify-content:flex-start;">
-        <button type="button" id="solveBtn">Solve (placeholder)</button>
+        <button type="button" id="solveBtn">Solve</button>
       </div>
 
-      <div class="section-label">Key Results (placeholder)</div>
+      <div class="section-label">Key Results</div>
       <div class="results-grid" id="resultsGrid">
         <div class="result-label">Flow rate Q*</div>
         <div class="result-value" id="Qstar">—</div>
@@ -378,7 +378,7 @@
     <!-- 6. Fan & System Curves -->
     <div class="panel fan-panel">
       <h2>6. Fan & System Curves</h2>
-      <small>Fan curve from table; system curve from pressure-drop model (soon).</small>
+      <small>Fan curve from table; system curve from pressure-drop model.</small>
       <canvas id="curveChart" height="360"></canvas>
     </div>
   </section>
@@ -401,37 +401,123 @@
     refreshFanChart();
   });
 
-  // --- Placeholder solve button ---
-  document.getElementById('solveBtn').addEventListener('click', () => {
-    // For now just read inlet area and make up a Q* so you can see wiring.
-    const wIn = parseFloat(document.getElementById('inletW').value) || 0;
-    const hIn = parseFloat(document.getElementById('inletH').value) || 0;
-    const Ain = wIn * hIn;
-    // Fake operating point:
-    const Qstar = Ain * 5.0; // pretend 5 m/s through inlet
-    const Dpstar = 250;      // Pa, arbitrary
-    const Vin = Ain > 0 ? Qstar / Ain : 0;
-
-    // Finned channels
-    const W = parseFloat(document.getElementById('WHS').value) || 0;
-    const s = parseFloat(document.getElementById('sfin').value) || 0;
-    const t = parseFloat(document.getElementById('tfin').value) || 0;
-    const b  = parseFloat(document.getElementById('b').value) || 0;
-    let Nch = 0;
-    if (s + t > 0 && W > 0) {
-      Nch = Math.floor((W + s) / (s + t)); // rough
+  // ---- Utility: read fan points from table ----
+  function readFanTable() {
+    const tbody = document.querySelector('#fanTable tbody');
+    const pts = [];
+    for (const row of tbody.rows) {
+      const Q = parseFloat(row.cells[1].querySelector('input').value);
+      const dp = parseFloat(row.cells[2].querySelector('input').value);
+      if (!isNaN(Q) && !isNaN(dp)) pts.push({x:Q, y:dp});
     }
-    const AchTot = Nch * s * b;
-    const Vch = AchTot > 0 ? Qstar / AchTot : 0;
+    pts.sort((a,b)=>a.x-b.x);
+    return pts;
+  }
 
-    document.getElementById('Qstar').textContent = Qstar.toExponential(3);
-    document.getElementById('Dpstar').textContent = Dpstar.toFixed(1);
-    document.getElementById('Vin').textContent   = Vin.toFixed(2);
-    document.getElementById('Vch').textContent   = isFinite(Vch) ? Vch.toFixed(2) : '—';
+  // ---- Fan curve interpolation (linear, with end extrapolation) ----
+  function fanDeltaP(Q) {
+    const pts = readFanTable();
+    if (pts.length === 0) return 0;
+    if (pts.length === 1) return pts[0].y;
 
-    // Update chart with a dummy system curve using this Q*
-    updateSystemCurve(Qstar, Dpstar);
-  });
+    // Below min Q -> extrapolate using first segment
+    if (Q <= pts[0].x) {
+      const p0 = pts[0], p1 = pts[1];
+      const t = (Q - p0.x) / (p1.x - p0.x);
+      return p0.y + t*(p1.y - p0.y);
+    }
+    // Above max Q -> extrapolate using last segment
+    const last = pts[pts.length-1];
+    const secondLast = pts[pts.length-2];
+    if (Q >= last.x) {
+      const p0 = secondLast, p1 = last;
+      const t = (Q - p0.x) / (p1.x - p0.x);
+      return p0.y + t*(p1.y - p0.y);
+    }
+
+    // Inside range: find segment
+    for (let i=0;i<pts.length-1;i++){
+      const p0 = pts[i], p1 = pts[i+1];
+      if (Q >= p0.x && Q <= p1.x) {
+        const t = (Q - p0.x) / (p1.x - p0.x || 1e-9);
+        return p0.y + t*(p1.y - p0.y);
+      }
+    }
+    return last.y; // fallback
+  }
+
+  // ---- Friction factor (smooth duct) ----
+  function frictionFactor(Re) {
+    if (!isFinite(Re) || Re <= 0) return 0;
+    if (Re < 2300) {
+      return 64 / Re; // laminar
+    } else {
+      return 0.3164 / Math.pow(Re, 0.25); // Blasius turbulent
+    }
+  }
+
+  // ---- System pressure drop Δp_sys(Q) ----
+  function systemDeltaP(Q) {
+    if (Q <= 0) return 0;
+
+    // Air properties
+    const rho = parseFloat(document.getElementById('rho').value) || 1.184;
+    const mu  = parseFloat(document.getElementById('mu').value)  || 1.85e-5;
+
+    // Geometry
+    const W  = parseFloat(document.getElementById('plenumW').value) || 0.20;
+    const H  = parseFloat(document.getElementById('plenumH').value) || 0.05;
+    const L  = parseFloat(document.getElementById('plenumL').value) || 0.30;
+    const wIn = parseFloat(document.getElementById('inletW').value) || 0.06;
+    const hIn = parseFloat(document.getElementById('inletH').value) || 0.06;
+
+    const b   = parseFloat(document.getElementById('b').value)    || 0.04;
+    const s   = parseFloat(document.getElementById('sfin').value) || 0.003;
+    const t   = parseFloat(document.getElementById('tfin').value) || 0.001;
+    const Lf  = parseFloat(document.getElementById('Lfin').value) || 0.25;
+    const WHS = parseFloat(document.getElementById('WHS').value)  || W;
+
+    // --- Inlet loss ---
+    const Ain = Math.max(wIn * hIn, 1e-9);
+    const Vin = Q / Ain;
+    const Kin = 1.0;
+    const dp_in = Kin * 0.5 * rho * Vin * Vin;
+
+    // --- Plenum above fins (assume H_p = H - b) ---
+    const Hp = Math.max(H - b, 1e-6);
+    const Apl = Math.max(W * Hp, 1e-9);
+    const Vpl = Q / Apl;
+    const Dh_pl = 2 * W * Hp / Math.max(W + Hp, 1e-9);
+    const Re_pl = rho * Vpl * Dh_pl / mu;
+    const f_pl  = frictionFactor(Re_pl);
+    const dp_pl = f_pl * (L / Math.max(Dh_pl, 1e-9)) * 0.5 * rho * Vpl * Vpl;
+
+    // --- Heat-sink channels ---
+    let dp_ch = 0;
+    const pitch = s + t;
+    if (pitch > 0 && WHS > 0 && b > 0) {
+      let Nch = Math.floor((WHS + s) / pitch);
+      if (Nch < 1) Nch = 1;
+      const g = s;         // clear gap
+      const Hc = b;
+      const AchTot = Nch * g * Hc;
+      if (AchTot > 0) {
+        const Vch = Q / AchTot;
+        const Dh_ch = 2 * g * Hc / Math.max(g + Hc, 1e-9);
+        const Re_ch = rho * Vch * Dh_ch / mu;
+        const f_ch  = frictionFactor(Re_ch);
+
+        const dp_major = f_ch * (Lf / Math.max(Dh_ch, 1e-9)) * 0.5 * rho * Vch * Vch;
+        const Kminor = 2.0; // entry + exit lumped
+        const dp_minor = Kminor * 0.5 * rho * Vch * Vch;
+
+        dp_ch = dp_major + dp_minor;
+      }
+    }
+
+    const dp_sys = dp_in + dp_pl + dp_ch;
+    return dp_sys;
+  }
 
   // --- Chart.js: fan + system curves ---
   const ctx = document.getElementById('curveChart').getContext('2d');
@@ -447,7 +533,7 @@
           pointRadius: 2
         },
         {
-          label: 'System curve (placeholder)',
+          label: 'System curve',
           data: [],
           borderWidth: 2,
           borderDash: [4,4],
@@ -484,42 +570,90 @@
   };
   const curveChart = new Chart(ctx, chartConfig);
 
-  function readFanTable() {
-    const tbody = document.querySelector('#fanTable tbody');
-    const pts = [];
-    for (const row of tbody.rows) {
-      const Q = parseFloat(row.cells[1].querySelector('input').value);
-      const dp = parseFloat(row.cells[2].querySelector('input').value);
-      if (!isNaN(Q) && !isNaN(dp)) pts.push({x:Q, y:dp});
-    }
-    pts.sort((a,b)=>a.x-b.x);
-    return pts;
-  }
-
   function refreshFanChart() {
     const pts = readFanTable();
     chartConfig.data.datasets[0].data = pts;
     curveChart.update();
   }
 
-  function updateSystemCurve(Qstar, Dpstar) {
-    const fanPts = readFanTable();
-    if (fanPts.length === 0 || !isFinite(Qstar) || Qstar <= 0) return;
+  refreshFanChart();
 
-    const Qmax = fanPts[fanPts.length-1].x || 1;
-    const sysPts = [];
-    const n = 20;
-    for (let i=0;i<=n;i++){
-      const Q = Qmax * i/n;
-      const dp = Dpstar * (Q / Qstar) ** 2; // pure quadratic placeholder
-      sysPts.push({x:Q,y:dp});
+  // ---- Operating point solver (scan) ----
+  function computeOperatingPoint() {
+    const fanPts = readFanTable();
+    if (fanPts.length < 2) {
+      alert("Need at least two fan curve points.");
+      return null;
     }
-    chartConfig.data.datasets[1].data = sysPts;
-    chartConfig.data.datasets[2].data = [{x:Qstar,y:Dpstar}];
-    curveChart.update();
+    const Qmax = fanPts[fanPts.length-1].x;
+    if (!isFinite(Qmax) || Qmax <= 0) {
+      alert("Fan curve Q values must be positive.");
+      return null;
+    }
+
+    const nScan = 80;
+    let bestQ = 0;
+    let bestErr = Infinity;
+    const sysCurve = [];
+
+    for (let i=0; i<=nScan; i++) {
+      const Q = Qmax * i / nScan;
+      const dpFan = fanDeltaP(Q);
+      const dpSys = systemDeltaP(Q);
+      const err = Math.abs(dpFan - dpSys);
+      if (err < bestErr) {
+        bestErr = err;
+        bestQ = Q;
+      }
+      sysCurve.push({x:Q, y:dpSys});
+    }
+
+    const dpStarFan = fanDeltaP(bestQ);
+    return {
+      Qstar: bestQ,
+      Dpstar: dpStarFan,
+      sysCurve
+    };
   }
 
-  refreshFanChart();
+  // ---- Solve button wiring ----
+  document.getElementById('solveBtn').addEventListener('click', () => {
+    const res = computeOperatingPoint();
+    if (!res) return;
+
+    const {Qstar, Dpstar, sysCurve} = res;
+
+    // Update results panel
+    const wIn = parseFloat(document.getElementById('inletW').value) || 0;
+    const hIn = parseFloat(document.getElementById('inletH').value) || 0;
+    const Ain = Math.max(wIn * hIn, 1e-9);
+    const Vin = Qstar / Ain;
+
+    const W   = parseFloat(document.getElementById('WHS').value)  || 0;
+    const s   = parseFloat(document.getElementById('sfin').value) || 0;
+    const t   = parseFloat(document.getElementById('tfin').value) || 0;
+    const b   = parseFloat(document.getElementById('b').value)    || 0;
+    let Vch = NaN;
+    const pitch = s + t;
+    if (pitch > 0 && W > 0 && b > 0) {
+      let Nch = Math.floor((W + s) / pitch);
+      if (Nch < 1) Nch = 1;
+      const AchTot = Nch * s * b;
+      if (AchTot > 0) {
+        Vch = Qstar / AchTot;
+      }
+    }
+
+    document.getElementById('Qstar').textContent = Qstar.toExponential(3);
+    document.getElementById('Dpstar').textContent = Dpstar.toFixed(1);
+    document.getElementById('Vin').textContent   = Vin.toFixed(2);
+    document.getElementById('Vch').textContent   = isFinite(Vch) ? Vch.toFixed(2) : '—';
+
+    // Update chart: fan curve already in dataset[0]
+    chartConfig.data.datasets[1].data = sysCurve;
+    chartConfig.data.datasets[2].data = [{x:Qstar,y:Dpstar}];
+    curveChart.update();
+  });
 
   // --- Schematic drawings ---
 
@@ -640,4 +774,5 @@
 </script>
 </body>
 </html>
+
 
