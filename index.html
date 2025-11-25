@@ -2,12 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Plenum / Fan – V1 System Curve UI</title>
+  <title>Plenum / Fan – V2 Manifold (with 3D + Streamlines)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- Three.js & OrbitControls -->
+  <script src="https://cdn.jsdelivr/npm/chart.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/controls/OrbitControls.js"></script>
   <style>
     :root{
       --bg:#f5f5f7;
@@ -48,19 +46,17 @@
       display:flex;
       flex-wrap:wrap;
       gap:var(--gap);
-      align-items:flex-start; /* left-aligned */
+      align-items:flex-start;
     }
     .col{
       display:flex;
       flex-direction:column;
       gap:var(--gap);
     }
-    /* LEFT column: 200px wide */
     .col-left{
       flex:0 0 200px;
       max-width:200px;
     }
-    /* MIDDLE column: 600px wide */
     .col-mid{
       flex:0 0 600px;
       max-width:600px;
@@ -179,13 +175,12 @@
     canvas{
       max-width:100%;
     }
-    /* Fan curve panel height limit and shrink */
     .fan-panel{
-      max-height:300px;   /* 50% of previous 600 */
+      max-height:300px;
       overflow-y:auto;
     }
     #curveChart{
-      height:180px !important;  /* shrink chart area */
+      height:180px !important;
     }
     #view3D{
       width:100%;
@@ -193,6 +188,21 @@
       border-radius:10px;
       border:1px solid #e5e7eb;
       background:#f9fafb;
+      position:relative;
+      overflow:hidden;
+    }
+    #view3D-msg{
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:12px;
+      color:#6b7280;
+      pointer-events:none;
+    }
+    #velChart{
+      height:180px !important;
     }
     @media (max-width:860px){
       .col-left{flex:1 1 200px; max-width:none;}
@@ -202,8 +212,8 @@
 </head>
 <body>
 <header>
-  <h1>Plenum / Fan Matching – V1 System Curve UI</h1>
-  <p>Fan curve + plenum / heat-sink geometry → operating point and average velocities.</p>
+  <h1>Plenum / Fan Matching – V2 Manifold</h1>
+  <p>Fan curve + plenum / heat-sink geometry → operating point, manifold velocity vs x, and 3D view with illustrative streamlines.</p>
 </header>
 
 <main>
@@ -216,21 +226,21 @@
         <div class="field">
           <label for="units">Units</label>
           <select id="units">
-            <option value="si">SI (m, Pa, m³/s)</option>
-            <option value="ip">IP (in, inH₂O, cfm)</option>
+            <option value="ip" selected>IP (in, inH₂O, cfm, °F)</option>
+            <option value="si">SI (m, Pa, m³/s, °C)</option>
           </select>
         </div>
         <div class="field">
-          <label for="Tair">Air Temp (°C)</label>
-          <input id="Tair" type="number" value="25">
+          <label for="Tair">Air Temp (°F / °C)</label>
+          <input id="Tair" type="number" value="70">
         </div>
         <div class="field">
-          <label for="rho">Density ρ (kg/m³)</label>
-          <input id="rho" type="number" value="1.184">
+          <label for="rho">Density ρ (kg/m³, solver)</label>
+          <input id="rho" type="number" value="1.20">
         </div>
         <div class="field">
-          <label for="mu">Viscosity μ (Pa·s)</label>
-          <input id="mu" type="number" value="1.85e-5" step="1e-6">
+          <label for="mu">Viscosity μ (Pa·s, solver)</label>
+          <input id="mu" type="number" value="1.82e-5" step="1e-6">
         </div>
       </div>
     </div>
@@ -238,20 +248,20 @@
     <!-- 2. Plenum & Inlet -->
     <div class="panel">
       <h2>2. Plenum & Inlet</h2>
-      <small>Geometry in current length units.</small>
+      <small>Geometry in selected length units (in or m).</small>
       <div class="section-label">Plenum</div>
       <div class="grid-2">
         <div class="field">
           <label for="plenumW">Width W</label>
-          <input id="plenumW" type="number" value="0.20" step="0.01">
+          <input id="plenumW" type="number" value="12" step="0.1">
         </div>
         <div class="field">
           <label for="plenumH">Height H</label>
-          <input id="plenumH" type="number" value="0.05" step="0.005">
+          <input id="plenumH" type="number" value="6" step="0.1">
         </div>
         <div class="field">
           <label for="plenumL">Length L</label>
-          <input id="plenumL" type="number" value="0.30" step="0.01">
+          <input id="plenumL" type="number" value="12" step="0.1">
         </div>
       </div>
 
@@ -259,19 +269,19 @@
       <div class="grid-2">
         <div class="field">
           <label for="inletW">Inlet width w</label>
-          <input id="inletW" type="number" value="0.06" step="0.005">
+          <input id="inletW" type="number" value="4" step="0.1">
         </div>
         <div class="field">
           <label for="inletH">Inlet height h</label>
-          <input id="inletH" type="number" value="0.06" step="0.005">
+          <input id="inletH" type="number" value="4" step="0.1">
         </div>
         <div class="field">
           <label for="inletX">Inlet x from start</label>
-          <input id="inletX" type="number" value="0.10" step="0.01">
+          <input id="inletX" type="number" value="4" step="0.1">
         </div>
         <div class="field">
           <label for="inletY">Inlet vertical offset</label>
-          <input id="inletY" type="number" value="0.0" step="0.005">
+          <input id="inletY" type="number" value="0.0" step="0.1">
         </div>
       </div>
     </div>
@@ -283,27 +293,27 @@
       <div class="grid-2">
         <div class="field">
           <label for="b">Fin height b</label>
-          <input id="b" type="number" value="0.04" step="0.002">
+          <input id="b" type="number" value="2" step="0.05">
         </div>
         <div class="field">
           <label for="tfin">Fin thickness t</label>
-          <input id="tfin" type="number" value="0.001" step="0.0005">
+          <input id="tfin" type="number" value="0.05" step="0.01">
         </div>
         <div class="field">
           <label for="sfin">Fin spacing s</label>
-          <input id="sfin" type="number" value="0.003" step="0.0005">
+          <input id="sfin" type="number" value="1" step="0.1">
         </div>
         <div class="field">
           <label for="Lfin">Fin length L<sub>f</sub></label>
-          <input id="Lfin" type="number" value="0.25" step="0.01">
+          <input id="Lfin" type="number" value="8" step="0.1">
         </div>
         <div class="field">
           <label for="xHS">HS lead edge x</label>
-          <input id="xHS" type="number" value="0.03" step="0.01">
+          <input id="xHS" type="number" value="3" step="0.1">
         </div>
         <div class="field">
           <label for="WHS">HS width (if &lt; W)</label>
-          <input id="WHS" type="number" value="0.20" step="0.01">
+          <input id="WHS" type="number" value="12" step="0.1">
         </div>
       </div>
     </div>
@@ -311,7 +321,7 @@
     <!-- 4. Fan Curve Table -->
     <div class="panel">
       <h2>4. Fan Curve</h2>
-      <small>Fan curve points (Q, Δp). Units follow selection.</small>
+      <small>Fan curve points (Q, Δp) in selected units (cfm / inH₂O or m³/s / Pa).</small>
       <table id="fanTable">
         <thead>
         <tr>
@@ -321,13 +331,14 @@
         </tr>
         </thead>
         <tbody>
-        <!-- Starter rows -->
-        <tr><td>1</td><td><input value="0"></td><td><input value="400"></td></tr>
-        <tr><td>2</td><td><input value="0.02"></td><td><input value="350"></td></tr>
-        <tr><td>3</td><td><input value="0.04"></td><td><input value="280"></td></tr>
-        <tr><td>4</td><td><input value="0.06"></td><td><input value="190"></td></tr>
-        <tr><td>5</td><td><input value="0.08"></td><td><input value="90"></td></tr>
-        <tr><td>6</td><td><input value="0.10"></td><td><input value="0"></td></tr>
+        <!-- 0.5 HP-ish default curve in IP (cfm, inH2O) -->
+        <tr><td>1</td><td><input value="0"></td><td><input value="2.2"></td></tr>
+        <tr><td>2</td><td><input value="200"></td><td><input value="2.0"></td></tr>
+        <tr><td>3</td><td><input value="400"></td><td><input value="1.7"></td></tr>
+        <tr><td>4</td><td><input value="600"></td><td><input value="1.3"></td></tr>
+        <tr><td>5</td><td><input value="800"></td><td><input value="0.8"></td></tr>
+        <tr><td>6</td><td><input value="1000"></td><td><input value="0.3"></td></tr>
+        <tr><td>7</td><td><input value="1100"></td><td><input value="0.0"></td></tr>
         </tbody>
       </table>
       <div class="btn-row">
@@ -337,47 +348,145 @@
     </div>
   </section>
 
-  <!-- MIDDLE COLUMN: PANELS 5, 6 (3D), 7 -->
+  <!-- MIDDLE COLUMN: PANELS 5–8 -->
   <section class="col col-mid">
     <!-- 5. Solve -->
     <div class="panel">
       <h2>5. Solve</h2>
-      <small>Version 1: system curve & operating point.</small>
+      <small>
+        System curve & operating point with Reynolds numbers and air power.
+        Flowrate / Δp / velocities use current units (cfm–inH₂O or m³/s–Pa; velocities always m/s in this version).
+      </small>
       <div class="btn-row" style="justify-content:flex-start;">
         <button type="button" id="solveBtn">Solve</button>
       </div>
 
       <div class="section-label">Key Results</div>
       <div class="results-grid" id="resultsGrid">
-        <div class="result-label">Flow rate Q*</div>
+        <div class="result-label">Flowrate Q* (cfm or m³/s)</div>
         <div class="result-value" id="Qstar">—</div>
-        <div class="result-label">Back pressure Δp*</div>
+
+        <div class="result-label">Back pressure Δp* (inH₂O or Pa)</div>
         <div class="result-value" id="Dpstar">—</div>
-        <div class="result-label">Inlet velocity V<sub>in</sub></div>
+
+        <div class="result-label">Inlet velocity V<sub>in</sub> (m/s)</div>
         <div class="result-value" id="Vin">—</div>
-        <div class="result-label">Channel velocity V<sub>ch,avg</sub></div>
+
+        <div class="result-label">Channel velocity V<sub>ch,avg</sub> (m/s)</div>
         <div class="result-value" id="Vch">—</div>
+
+        <div class="result-label">Reynolds (plenum) Re<sub>pl</sub></div>
+        <div class="result-value" id="Re_pl">—</div>
+
+        <div class="result-label">Reynolds (channel) Re<sub>ch</sub></div>
+        <div class="result-value" id="Re_ch">—</div>
+
+        <div class="result-label">Fan air power (HP)</div>
+        <div class="result-value" id="HP">—</div>
       </div>
     </div>
 
-    <!-- 6. 3D Geometry View -->
+    <!-- 6. Velocity Distribution (V2 along x) -->
     <div class="panel">
-      <h2>6. 3D Geometry View</h2>
-      <small>Rotatable view of plenum, inlet, and finned heat sink.</small>
-      <div id="view3D"></div>
+      <h2>6. Velocity Distribution (V2)</h2>
+      <small>1D plenum-over-HS manifold model – V<sub>ch</sub>(x) along heat sink.</small>
+
+      <div class="grid-2">
+        <div class="field">
+          <label for="nSlices"># slices along HS</label>
+          <input id="nSlices" type="number" value="20" min="3" max="80" step="1">
+        </div>
+      </div>
+
+      <div class="section-label">V<sub>ch</sub>(x) / distribution (m/s)</div>
+      <canvas id="velChart"></canvas>
     </div>
 
-    <!-- 7. Fan & System Curves -->
+    <!-- 7. 3D Geometry View + Streamlines -->
+    <div class="panel">
+      <h2>7. 3D Geometry View</h2>
+      <small>Rotatable view of plenum, inlet, and finned heat sink, with illustrative streamlines.</small>
+      <div id="view3D">
+        <div id="view3D-msg">Click and drag to rotate, mouse wheel to zoom.</div>
+      </div>
+    </div>
+
+    <!-- 8. Fan & System Curves -->
     <div class="panel fan-panel">
-      <h2>7. Fan & System Curves</h2>
-      <small>Fan curve from table; system curve from pressure-drop model.</small>
+      <h2>8. Fan & System Curves</h2>
+      <small>Fan curve from table; system curve from pressure-drop model. Axes use selected units.</small>
       <canvas id="curveChart"></canvas>
     </div>
   </section>
 </main>
 
 <script>
-  // --- Fan table row add/delete ---
+  // =========================
+  // Unit helpers & conversion
+  // =========================
+  const CFM_TO_M3S   = 0.00047194745;
+  const INH2O_TO_PA  = 249.0889;
+  let   currentUnits = 'ip'; // start in IP
+
+  function getUnits(){
+    return document.getElementById('units').value;
+  }
+
+  function lenConvert(v, from, to){
+    if (!isFinite(v)) return v;
+    let m = (from === 'ip') ? v*0.0254 : v;
+    return (to === 'ip') ? m/0.0254 : m;
+  }
+  function flowConvert(v, from, to){
+    if (!isFinite(v)) return v;
+    let m3s = (from === 'ip') ? v*CFM_TO_M3S : v;
+    return (to === 'ip') ? m3s/CFM_TO_M3S : m3s;
+  }
+  function dpConvert(v, from, to){
+    if (!isFinite(v)) return v;
+    let Pa = (from === 'ip') ? v*INH2O_TO_PA : v;
+    return (to === 'ip') ? Pa/INH2O_TO_PA : Pa;
+  }
+  function tempConvert(v, from, to){
+    if (!isFinite(v)) return v;
+    let C = (from === 'ip') ? (v-32)*5/9 : v;
+    return (to === 'ip') ? (C*9/5+32) : C;
+  }
+
+  // length from a field in SI (m) for solver
+  function lenFromField(id){
+    const v = parseFloat(document.getElementById(id).value);
+    const u = getUnits();
+    return lenConvert(isNaN(v)?0:v, u, 'si');
+  }
+
+  // =======================
+  // Fan table read / convert
+  // =======================
+  function readFanTableUI(){
+    const tbody = document.querySelector('#fanTable tbody');
+    const pts = [];
+    for (const row of tbody.rows) {
+      const Q = parseFloat(row.cells[1].querySelector('input').value);
+      const dp = parseFloat(row.cells[2].querySelector('input').value);
+      if (!isNaN(Q) && !isNaN(dp)) pts.push({x:Q, y:dp});
+    }
+    pts.sort((a,b)=>a.x-b.x);
+    return pts;
+  }
+
+  function readFanTableSI(){
+    const ptsUI = readFanTableUI();
+    const u = getUnits();
+    return ptsUI.map(p=>({
+      x: flowConvert(p.x, u, 'si'),
+      y: dpConvert(p.y, u, 'si')
+    })).sort((a,b)=>a.x-b.x);
+  }
+
+  // =======================
+  // Fan table row add/del
+  // =======================
   document.getElementById('addRowBtn').addEventListener('click', () => {
     const tbody = document.querySelector('#fanTable tbody');
     const idx = tbody.rows.length + 1;
@@ -393,191 +502,169 @@
     refreshFanChart();
   });
 
-  // ---- Utility: read fan points from table ----
-  function readFanTable() {
-    const tbody = document.querySelector('#fanTable tbody');
-    const pts = [];
-    for (const row of tbody.rows) {
-      const Q = parseFloat(row.cells[1].querySelector('input').value);
-      const dp = parseFloat(row.cells[2].querySelector('input').value);
-      if (!isNaN(Q) && !isNaN(dp)) pts.push({x:Q, y:dp});
-    }
-    pts.sort((a,b)=>a.x-b.x);
-    return pts;
-  }
+  // ===================
+  // Fan Δp interpolation (SI)
+  // ===================
+  function fanDeltaP_SI(Q_SI, ptsSI){
+    if (ptsSI.length === 0) return 0;
+    if (ptsSI.length === 1) return ptsSI[0].y;
 
-  // ---- Fan curve interpolation (linear, with end extrapolation) ----
-  function fanDeltaP(Q) {
-    const pts = readFanTable();
-    if (pts.length === 0) return 0;
-    if (pts.length === 1) return pts[0].y;
-
-    // Below min Q -> extrapolate using first segment
-    if (Q <= pts[0].x) {
-      const p0 = pts[0], p1 = pts[1];
-      const t = (Q - p0.x) / (p1.x - p0.x);
-      return p0.y + t*(p1.y - p0.y);
+    if (Q_SI <= ptsSI[0].x) {
+      const p0 = ptsSI[0], p1 = ptsSI[1];
+      const t = (Q_SI - p0.x)/(p1.x-p0.x || 1e-9);
+      return p0.y + t*(p1.y-p0.y);
     }
-    // Above max Q -> extrapolate using last segment
-    const last = pts[pts.length-1];
-    const secondLast = pts[pts.length-2];
-    if (Q >= last.x) {
+    const last = ptsSI[ptsSI.length-1];
+    const secondLast = ptsSI[ptsSI.length-2];
+    if (Q_SI >= last.x) {
       const p0 = secondLast, p1 = last;
-      const t = (Q - p0.x) / (p1.x - p0.x);
-      return p0.y + t*(p1.y - p0.y);
+      const t = (Q_SI - p0.x)/(p1.x-p0.x || 1e-9);
+      return p0.y + t*(p1.y-p0.y);
     }
-
-    // Inside range: find segment
-    for (let i=0;i<pts.length-1;i++){
-      const p0 = pts[i], p1 = pts[i+1];
-      if (Q >= p0.x && Q <= p1.x) {
-        const t = (Q - p0.x) / (p1.x - p0.x || 1e-9);
-        return p0.y + t*(p1.y - p0.y);
+    for (let i=0;i<ptsSI.length-1;i++){
+      const p0=ptsSI[i], p1=ptsSI[i+1];
+      if (Q_SI >= p0.x && Q_SI <= p1.x){
+        const t = (Q_SI-p0.x)/(p1.x-p0.x || 1e-9);
+        return p0.y + t*(p1.y-p0.y);
       }
     }
-    return last.y; // fallback
+    return last.y;
   }
 
-  // ---- Friction factor (smooth duct) ----
-  function frictionFactor(Re) {
+  // ================
+  // Friction factor
+  // ================
+  function frictionFactor(Re){
     if (!isFinite(Re) || Re <= 0) return 0;
-    if (Re < 2300) {
-      return 64 / Re; // laminar
-    } else {
-      return 0.3164 / Math.pow(Re, 0.25); // Blasius turbulent
-    }
+    if (Re < 2300) return 64/Re;
+    return 0.3164/Math.pow(Re,0.25);
   }
 
-  // ---- System pressure drop Δp_sys(Q) ----
-  function systemDeltaP(Q) {
-    if (Q <= 0) return 0;
+  // =========================
+  // Channel Δp (bank, SI)
+  // =========================
+  function channelDeltaP(Q_SI, rho, mu, WHS_SI, b_SI, s_SI, t_SI, Lf_SI){
+    const pitch = s_SI + t_SI;
+    if (Q_SI <= 0 || pitch <=0 || WHS_SI<=0 || b_SI<=0 || Lf_SI<=0) return 0;
+    let Nch = Math.floor((WHS_SI + s_SI)/pitch);
+    if (Nch<1) Nch=1;
+    const g = s_SI;
+    const Hc = b_SI;
+    const AchTot = Nch*g*Hc;
+    if (AchTot<=0) return 0;
+    const Vch = Q_SI/AchTot;
+    const Dh_ch = 2*g*Hc/Math.max(g+Hc,1e-9);
+    const Re_ch = rho*Vch*Dh_ch/mu;
+    const f_ch = frictionFactor(Re_ch);
+    const dp_major = f_ch*(Lf_SI/Math.max(Dh_ch,1e-9))*0.5*rho*Vch*Vch;
+    const Kminor = 2.0;
+    const dp_minor = Kminor*0.5*rho*Vch*Vch;
+    return dp_major + dp_minor;
+  }
 
-    // Air properties
-    const rho = parseFloat(document.getElementById('rho').value) || 1.184;
-    const mu  = parseFloat(document.getElementById('mu').value)  || 1.85e-5;
+  // ====================
+  // System Δp_sys(Q_SI)
+  // ====================
+  function systemDeltaP_SI(Q_SI){
+    if (Q_SI <= 0) return 0;
+    const rho = parseFloat(document.getElementById('rho').value) || 1.2;
+    const mu  = parseFloat(document.getElementById('mu').value)  || 1.82e-5;
 
-    // Geometry
-    const W  = parseFloat(document.getElementById('plenumW').value) || 0.20;
-    const H  = parseFloat(document.getElementById('plenumH').value) || 0.05;
-    const L  = parseFloat(document.getElementById('plenumL').value) || 0.30;
-    const wIn = parseFloat(document.getElementById('inletW').value) || 0.06;
-    const hIn = parseFloat(document.getElementById('inletH').value) || 0.06;
+    const W  = lenFromField('plenumW');
+    const H  = lenFromField('plenumH');
+    const L  = lenFromField('plenumL');
+    const wIn = lenFromField('inletW');
+    const hIn = lenFromField('inletH');
 
-    const b   = parseFloat(document.getElementById('b').value)    || 0.04;
-    const s   = parseFloat(document.getElementById('sfin').value) || 0.003;
-    const t   = parseFloat(document.getElementById('tfin').value) || 0.001;
-    const Lf  = parseFloat(document.getElementById('Lfin').value) || 0.25;
-    const WHS = parseFloat(document.getElementById('WHS').value)  || W;
+    const b   = lenFromField('b');
+    const s   = lenFromField('sfin');
+    const t   = lenFromField('tfin');
+    const Lf  = lenFromField('Lfin');
+    const WHS = lenFromField('WHS');
 
-    // --- Inlet loss ---
-    const Ain = Math.max(wIn * hIn, 1e-9);
-    const Vin = Q / Ain;
+    const Ain = Math.max(wIn*hIn,1e-9);
+    const Vin = Q_SI/Ain;
     const Kin = 1.0;
-    const dp_in = Kin * 0.5 * rho * Vin * Vin;
+    const dp_in = Kin*0.5*rho*Vin*Vin;
 
-    // --- Plenum above fins (assume H_p = H - b) ---
-    const Hp = Math.max(H - b, 1e-6);
-    const Apl = Math.max(W * Hp, 1e-9);
-    const Vpl = Q / Apl;
-    const Dh_pl = 2 * W * Hp / Math.max(W + Hp, 1e-9);
-    const Re_pl = rho * Vpl * Dh_pl / mu;
-    const f_pl  = frictionFactor(Re_pl);
-    const dp_pl = f_pl * (L / Math.max(Dh_pl, 1e-9)) * 0.5 * rho * Vpl * Vpl;
+    const Hp = Math.max(H-b,1e-6);
+    const Apl = Math.max(W*Hp,1e-9);
+    const Vpl = Q_SI/Apl;
+    const Dh_pl = 2*W*Hp/Math.max(W+Hp,1e-9);
+    const Re_pl = rho*Vpl*Dh_pl/mu;
+    const f_pl = frictionFactor(Re_pl);
+    const dp_pl = f_pl*(L/Math.max(Dh_pl,1e-9))*0.5*rho*Vpl*Vpl;
 
-    // --- Heat-sink channels ---
-    let dp_ch = 0;
-    const pitch = s + t;
-    if (pitch > 0 && WHS > 0 && b > 0) {
-      let Nch = Math.floor((WHS + s) / pitch);
-      if (Nch < 1) Nch = 1;
-      const g = s;         // clear gap
-      const Hc = b;
-      const AchTot = Nch * g * Hc;
-      if (AchTot > 0) {
-        const Vch = Q / AchTot;
-        const Dh_ch = 2 * g * Hc / Math.max(g + Hc, 1e-9);
-        const Re_ch = rho * Vch * Dh_ch / mu;
-        const f_ch  = frictionFactor(Re_ch);
+    const dp_ch = channelDeltaP(Q_SI,rho,mu,WHS,b,s,t,Lf);
 
-        const dp_major = f_ch * (Lf / Math.max(Dh_ch, 1e-9)) * 0.5 * rho * Vch * Vch;
-        const Kminor = 2.0; // entry + exit lumped
-        const dp_minor = Kminor * 0.5 * rho * Vch * Vch;
-
-        dp_ch = dp_major + dp_minor;
-      }
-    }
-
-    const dp_sys = dp_in + dp_pl + dp_ch;
-    return dp_sys;
+    return dp_in + dp_pl + dp_ch;
   }
 
-  // --- Chart.js: fan + system curves ---
-  const ctx = document.getElementById('curveChart').getContext('2d');
+  // ==========================
+  // Chart.js: fan & system
+  // ==========================
+  const ctxCurve = document.getElementById('curveChart').getContext('2d');
   const chartConfig = {
     type: 'line',
     data: {
       datasets: [
-        {
-          label: 'Fan curve',
-          data: [],
-          borderWidth: 2,
-          tension: 0.2,
-          pointRadius: 2
-        },
-        {
-          label: 'System curve',
-          data: [],
-          borderWidth: 2,
-          borderDash: [4,4],
-          tension: 0.2,
-          pointRadius: 0
-        },
-        {
-          label: 'Operating point',
-          data: [],
-          type: 'scatter',
-          pointRadius: 4,
-          pointStyle: 'circle'
-        }
+        { label: 'Fan curve', data: [], borderWidth: 2, tension: 0.2, pointRadius: 2 },
+        { label: 'System curve', data: [], borderWidth: 2, borderDash: [4,4], tension: 0.2, pointRadius: 0 },
+        { label: 'Operating point', data: [], type: 'scatter', pointRadius: 4, pointStyle: 'circle' }
       ]
     },
     options: {
       responsive:true,
       maintainAspectRatio:false,
       scales: {
-        x: {
-          type: 'linear',
-          title:{display:true,text:'Flow Q'},
-          ticks:{maxTicksLimit:6}
-        },
-        y: {
-          title:{display:true,text:'Δp'},
-          ticks:{maxTicksLimit:6}
-        }
+        x: { type: 'linear', title:{display:true,text:'Flow Q'}, ticks:{maxTicksLimit:6} },
+        y: { title:{display:true,text:'Δp'}, ticks:{maxTicksLimit:6} }
       },
-      plugins:{
-        legend:{display:true,position:'bottom'}
-      }
+      plugins:{ legend:{display:true,position:'bottom'} }
     }
   };
-  const curveChart = new Chart(ctx, chartConfig);
+  const curveChart = new Chart(ctxCurve, chartConfig);
 
-  function refreshFanChart() {
-    const pts = readFanTable();
-    chartConfig.data.datasets[0].data = pts;
+  function refreshFanChart(){
+    chartConfig.data.datasets[0].data = readFanTableUI();
     curveChart.update();
   }
   refreshFanChart();
 
-  // ---- Operating point solver (scan) ----
-  function computeOperatingPoint() {
-    const fanPts = readFanTable();
-    if (fanPts.length < 2) {
-      alert("Need at least two fan curve points.");
+  // ==========================
+  // V2: velocity vs x chart
+  // ==========================
+  const ctxVel = document.getElementById('velChart').getContext('2d');
+  const velConfig = {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: 'V_ch(x)', data: [], borderWidth: 2, tension: 0.2, pointRadius: 0 }
+      ]
+    },
+    options: {
+      responsive:true,
+      maintainAspectRatio:false,
+      scales: {
+        x: { type:'linear', title:{display:true,text:'x / L_f'}, ticks:{maxTicksLimit:6} },
+        y: { title:{display:true,text:'V_ch (m/s)'}, ticks:{maxTicksLimit:6} }
+      },
+      plugins:{ legend:{display:false } }
+    }
+  };
+  const velChart = new Chart(ctxVel, velConfig);
+
+  // =================================
+  // Operating point (fan vs system)
+  // =================================
+  function computeOperatingPoint(){
+    const fanPtsSI = readFanTableSI();
+    if (fanPtsSI.length < 2){
+      alert("Need at least two fan-curve points.");
       return null;
     }
-    const Qmax = fanPts[fanPts.length-1].x;
-    if (!isFinite(Qmax) || Qmax <= 0) {
+    const Qmax = fanPtsSI[fanPtsSI.length-1].x;
+    if (!isFinite(Qmax) || Qmax<=0){
       alert("Fan curve Q values must be positive.");
       return null;
     }
@@ -585,77 +672,272 @@
     const nScan = 80;
     let bestQ = 0;
     let bestErr = Infinity;
-    const sysCurve = [];
+    const sysCurveSI = [];
 
-    for (let i=0; i<=nScan; i++) {
-      const Q = Qmax * i / nScan;
-      const dpFan = fanDeltaP(Q);
-      const dpSys = systemDeltaP(Q);
-      const err = Math.abs(dpFan - dpSys);
-      if (err < bestErr) {
+    for (let i=0;i<=nScan;i++){
+      const Q = Qmax*i/nScan;
+      const dpFan = fanDeltaP_SI(Q,fanPtsSI);
+      const dpSys = systemDeltaP_SI(Q);
+      const err = Math.abs(dpFan-dpSys);
+      if (err < bestErr){
         bestErr = err;
         bestQ = Q;
       }
-      sysCurve.push({x:Q, y:dpSys});
+      sysCurveSI.push({x:Q,y:dpSys});
     }
-
-    const dpStarFan = fanDeltaP(bestQ);
-    return {
-      Qstar: bestQ,
-      Dpstar: dpStarFan,
-      sysCurve
-    };
+    const dpStarFan = fanDeltaP_SI(bestQ,fanPtsSI);
+    return { Qstar_SI:bestQ, Dpstar_SI:dpStarFan, sysCurveSI };
   }
 
-  // ---- Solve button wiring ----
+  // =========================================
+  // V2: 1D manifold profile (same as earlier)
+  // =========================================
+  function computeVelocityProfile(Qstar_SI){
+    const rho = parseFloat(document.getElementById('rho').value) || 1.2;
+    const mu  = parseFloat(document.getElementById('mu').value)  || 1.82e-5;
+
+    const W   = lenFromField('plenumW');
+    const H   = lenFromField('plenumH');
+    const b   = lenFromField('b');
+    const s   = lenFromField('sfin');
+    const t   = lenFromField('tfin');
+    const Lf  = lenFromField('Lfin');
+    const WHS = lenFromField('WHS');
+    let nSlices = parseInt(document.getElementById('nSlices').value,10);
+    if (!isFinite(nSlices)||nSlices<3) nSlices=20;
+    if (nSlices>80) nSlices=80;
+
+    if (Qstar_SI<=0 || Lf<=0 || W<=0 || H<=0 || WHS<=0 || b<=0 || s<=0) return null;
+
+    const Hp = Math.max(H-b,1e-6);
+    const Apl = Math.max(W*Hp,1e-9);
+    const Dh_pl = 2*W*Hp/Math.max(W+Hp,1e-9);
+
+    const pitch = s+t;
+    if (pitch<=0) return null;
+    let Nch = Math.floor((WHS + s)/pitch);
+    if (Nch<1) Nch=1;
+    const AchPerChannel = s*b;
+    const AchTot = Nch*AchPerChannel;
+    if (AchTot<=0) return null;
+
+    const dp_ch_star = channelDeltaP(Qstar_SI,rho,mu,WHS,b,s,t,Lf);
+    const Vch_star = Qstar_SI/AchTot;
+    let Kch_eff = dp_ch_star>0 && Vch_star>0 ? dp_ch_star/(0.5*rho*Vch_star*Vch_star) : 0;
+    if (!isFinite(Kch_eff) || Kch_eff<=0){
+      const xs=[], Vs=[], dx=Lf/nSlices;
+      for (let i=0;i<nSlices;i++){
+        xs.push((i+0.5)*dx); Vs.push(Vch_star);
+      }
+      return {xs,Vs,Vavg:Vch_star,Vmin:Vch_star,Vmax:Vch_star};
+    }
+
+    const P_out = 0;
+    const dx = Lf/nSlices;
+    const Aslice = AchTot/nSlices;
+
+    const Hp_loc = Hp, Apl_loc=Apl, Dh_pl_loc=Dh_pl;
+
+    function runForP0(P0,capture){
+      let Pp=P0;
+      let sumQ=0;
+      let Qp=Qstar_SI;
+      const xs=[], Vs=[];
+      for (let i=0;i<nSlices;i++){
+        let Vch_i=0, qi=0;
+        if (Pp>P_out){
+          Vch_i = Math.sqrt(2*(Pp-P_out)/(rho*Kch_eff));
+          qi = Aslice*Vch_i;
+        }
+        sumQ += qi;
+        if (capture){
+          const x_mid = (i+0.5)*dx;
+          xs.push(x_mid); Vs.push(Vch_i);
+        }
+        Qp = Qstar_SI - sumQ;
+        if (Qp<0) Qp=0;
+        const Vpl_i = Apl_loc>0 ? Qp/Apl_loc : 0;
+        const Re_pl_i = rho*Vpl_i*Dh_pl_loc/mu;
+        const f_pl_i = frictionFactor(Re_pl_i);
+        const dp_pl_i = f_pl_i*(dx/Math.max(Dh_pl_loc,1e-9))*0.5*rho*Vpl_i*Vpl_i;
+        Pp -= dp_pl_i;
+      }
+      return {sumQ,xs,Vs};
+    }
+
+    let dpRef = dp_ch_star;
+    if (!isFinite(dpRef)||dpRef<=0) dpRef=100;
+    let P0_low=0.1*dpRef, P0_high=10*dpRef;
+    if (P0_low<=0) P0_low=10;
+    if (P0_high<=P0_low) P0_high=P0_low*100;
+
+    let sum_low = runForP0(P0_low,false).sumQ;
+    let sum_high= runForP0(P0_high,false).sumQ;
+    if (!isFinite(sum_low)||!isFinite(sum_high)|| sum_low>Qstar_SI || sum_high<Qstar_SI){
+      const xs=[],Vs=[],dx=Lf/nSlices;
+      for (let i=0;i<nSlices;i++){
+        xs.push((i+0.5)*dx); Vs.push(Vch_star);
+      }
+      return {xs,Vs,Vavg:Vch_star,Vmin:Vch_star,Vmax:Vch_star};
+    }
+
+    let P0_mid=P0_low;
+    for (let it=0;it<30;it++){
+      P0_mid = 0.5*(P0_low+P0_high);
+      const smid = runForP0(P0_mid,false).sumQ;
+      if (!isFinite(smid)) break;
+      if (smid>Qstar_SI) P0_high=P0_mid; else P0_low=P0_mid;
+    }
+    const finalRun = runForP0(P0_mid,true);
+    const xs=finalRun.xs, Vs=finalRun.Vs;
+    if (Vs.length===0) return null;
+    let Vmin=Infinity,Vmax=-Infinity,sumV=0;
+    for (let v of Vs){ if (v<Vmin) Vmin=v; if (v>Vmax) Vmax=v; sumV+=v; }
+    const Vavg=sumV/Vs.length;
+    return {xs,Vs,Vavg,Vmin,Vmax};
+  }
+
+  // =====================================
+  // Solve button: V2 + charts + 3D rebuild
+  // =====================================
   document.getElementById('solveBtn').addEventListener('click', () => {
     const res = computeOperatingPoint();
     if (!res) return;
+    const {Qstar_SI,Dpstar_SI,sysCurveSI} = res;
 
-    const {Qstar, Dpstar, sysCurve} = res;
+    const rho = parseFloat(document.getElementById('rho').value) || 1.2;
+    const mu  = parseFloat(document.getElementById('mu').value)  || 1.82e-5;
 
-    // Update results panel
-    const wIn = parseFloat(document.getElementById('inletW').value) || 0;
-    const hIn = parseFloat(document.getElementById('inletH').value) || 0;
-    const Ain = Math.max(wIn * hIn, 1e-9);
-    const Vin = Qstar / Ain;
+    const wIn_SI = lenFromField('inletW');
+    const hIn_SI = lenFromField('inletH');
+    const Ain = Math.max(wIn_SI*hIn_SI,1e-9);
+    const Vin_SI = Qstar_SI/Ain;
 
-    const W   = parseFloat(document.getElementById('WHS').value)  || 0;
-    const s   = parseFloat(document.getElementById('sfin').value) || 0;
-    const t   = parseFloat(document.getElementById('tfin').value) || 0;
-    const b   = parseFloat(document.getElementById('b').value)    || 0;
-    let Vch = NaN;
-    const pitch = s + t;
-    if (pitch > 0 && W > 0 && b > 0) {
-      let Nch = Math.floor((W + s) / pitch);
-      if (Nch < 1) Nch = 1;
-      const AchTot = Nch * s * b;
-      if (AchTot > 0) {
-        Vch = Qstar / AchTot;
+    const W_SI  = lenFromField('plenumW');
+    const H_SI  = lenFromField('plenumH');
+    const b_SI  = lenFromField('b');
+    const s_SI  = lenFromField('sfin');
+    const t_SI  = lenFromField('tfin');
+    const WHS_SI = lenFromField('WHS');
+    const Lf_SI  = lenFromField('Lfin');
+
+    const Hp = Math.max(H_SI-b_SI,1e-6);
+    const Apl = Math.max(W_SI*Hp,1e-9);
+    const Vpl_SI = Qstar_SI/Apl;
+    const Dh_pl = 2*W_SI*Hp/Math.max(W_SI+Hp,1e-9);
+    const Re_pl = rho*Vpl_SI*Dh_pl/mu;
+
+    let Vch_SI=NaN, Re_ch=NaN;
+    const pitch = s_SI+t_SI;
+    if (pitch>0 && WHS_SI>0 && b_SI>0){
+      let Nch=Math.floor((WHS_SI + s_SI)/pitch);
+      if (Nch<1) Nch=1;
+      const AchTot=Nch*s_SI*b_SI;
+      if (AchTot>0){
+        Vch_SI=Qstar_SI/AchTot;
+        const Dh_ch = 2*s_SI*b_SI/Math.max(s_SI+b_SI,1e-9);
+        Re_ch = rho*Vch_SI*Dh_ch/mu;
       }
     }
 
-    document.getElementById('Qstar').textContent = Qstar.toExponential(3);
-    document.getElementById('Dpstar').textContent = Dpstar.toFixed(1);
-    document.getElementById('Vin').textContent   = Vin.toFixed(2);
-    document.getElementById('Vch').textContent   = isFinite(Vch) ? Vch.toFixed(2) : '—';
+    const power_W = Qstar_SI*Dpstar_SI;
+    const HP = power_W/745.7;
 
-    // Update chart: fan curve already in dataset[0]
-    chartConfig.data.datasets[1].data = sysCurve;
-    chartConfig.data.datasets[2].data = [{x:Qstar,y:Dpstar}];
+    const u = getUnits();
+    const Q_disp  = flowConvert(Qstar_SI,'si',u);
+    const dp_disp = dpConvert(Dpstar_SI,'si',u);
+
+    document.getElementById('Qstar').textContent  = isFinite(Q_disp)?Q_disp.toFixed(2):'—';
+    document.getElementById('Dpstar').textContent = isFinite(dp_disp)?dp_disp.toFixed(3):'—';
+    document.getElementById('Vin').textContent    = Vin_SI.toFixed(2);
+    document.getElementById('Vch').textContent    = isFinite(Vch_SI)?Vch_SI.toFixed(2):'—';
+    document.getElementById('Re_pl').textContent  = isFinite(Re_pl)?Re_pl.toFixed(0):'—';
+    document.getElementById('Re_ch').textContent  = isFinite(Re_ch)?Re_ch.toFixed(0):'—';
+    document.getElementById('HP').textContent     = isFinite(HP)?HP.toFixed(3):'—';
+
+    const sysCurveUI = sysCurveSI.map(p=>({
+      x: flowConvert(p.x,'si',u),
+      y: dpConvert(p.y,'si',u)
+    }));
+    chartConfig.data.datasets[1].data = sysCurveUI;
+    chartConfig.data.datasets[2].data = [{x:Q_disp,y:dp_disp}];
     curveChart.update();
+
+    const prof = computeVelocityProfile(Qstar_SI);
+    if (!prof || !prof.Vs || prof.Vs.length===0){
+      velConfig.data.datasets[0].data=[];
+      velChart.update();
+    }else{
+      const {xs,Vs} = prof;
+      const data=[];
+      const Lf_val=Lf_SI;
+      for (let i=0;i<xs.length;i++){
+        const xNorm = Lf_val>0? xs[i]/Lf_val : 0;
+        data.push({x:xNorm,y:Vs[i]});
+      }
+      velConfig.data.datasets[0].data=data;
+      velChart.update();
+    }
+
+    // Rebuild 3D so streamlines reflect any geometry changes
+    update3DGeometry();
+  });
+
+  // ==========================
+  // Units change handler
+  // ==========================
+  document.getElementById('units').addEventListener('change', (e)=>{
+    const newUnits=e.target.value;
+    const oldUnits=currentUnits;
+    if (newUnits===oldUnits) return;
+
+    // temperature
+    let T = parseFloat(document.getElementById('Tair').value);
+    if (!isNaN(T)){
+      const Tnew = tempConvert(T, oldUnits, newUnits);
+      document.getElementById('Tair').value = Tnew.toFixed(1);
+    }
+
+    // lengths
+    const lenIds=['plenumW','plenumH','plenumL','inletW','inletH','inletX','inletY',
+                  'b','tfin','sfin','Lfin','xHS','WHS'];
+    lenIds.forEach(id=>{
+      const el=document.getElementById(id);
+      if (!el) return;
+      let v=parseFloat(el.value);
+      if (isNaN(v)) return;
+      const vNew=lenConvert(v,oldUnits,newUnits);
+      el.value = +vNew.toFixed(4);
+    });
+
+    // fan table Q and dp
+    const tbody=document.querySelector('#fanTable tbody');
+    for (const row of tbody.rows){
+      const qEl=row.cells[1].querySelector('input');
+      const pEl=row.cells[2].querySelector('input');
+      let q=parseFloat(qEl.value);
+      let p=parseFloat(pEl.value);
+      if (!isNaN(q)) qEl.value = flowConvert(q, oldUnits, newUnits).toFixed(3);
+      if (!isNaN(p)) pEl.value = dpConvert(p, oldUnits, newUnits).toFixed(3);
+    }
+
+    currentUnits=newUnits;
+    refreshFanChart();
+    update3DGeometry();
   });
 
   // =========================
-  // 3D VIEW (Three.js)
+  // 3D VIEW (Three.js, custom orbit)
   // =========================
-  let scene, camera, renderer, controls, plenumGroup;
-  let threeInitialized = false;
+  let scene, camera, renderer, plenumGroup;
+  let orbit = { radius:15, theta:Math.PI/4, phi:Math.PI/4, target:new THREE.Vector3(0,0,0) };
+  let isDragging = false, lastX=0, lastY=0, startTheta=0, startPhi=0;
 
   function init3D() {
-    if (threeInitialized) return;
-    threeInitialized = true;
-
+    if (!window.THREE) {
+      document.getElementById('view3D-msg').textContent = "Three.js failed to load.";
+      return;
+    }
     const container = document.getElementById('view3D');
     const w = container.clientWidth || 580;
     const h = container.clientHeight || 260;
@@ -664,79 +946,259 @@
     scene.background = new THREE.Color(0xf9fafb);
 
     camera = new THREE.PerspectiveCamera(40, w/h, 0.1, 1000);
-    camera.position.set(15, 10, 12);
 
     renderer = new THREE.WebGLRenderer({antialias:true});
     renderer.setSize(w, h);
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setClearColor(0xf9fafb, 1);
     container.appendChild(renderer.domElement);
 
-    controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controls.target.set(0, 0, 0);
-
-    // Lights
-    const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.9);
     scene.add(ambient);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.5);
-    dir.position.set(10, 20, 10);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+    dir.position.set(10, 15, 8);
     scene.add(dir);
 
-    // Group to hold plenum + fins
     plenumGroup = new THREE.Group();
     scene.add(plenumGroup);
 
-    // Simple ground grid for reference
-    const grid = new THREE.GridHelper(20, 20, 0xbbbbbb, 0xe5e5e5);
-    grid.position.y = -5;
-    scene.add(grid);
-
-    // Initial geometry
     update3DGeometry();
+    setup3DInteractions(renderer.domElement);
 
-    // Resize handling
-    window.addEventListener('resize', onWindowResize3D);
+    window.addEventListener('resize', onResize3D);
 
-    // Animation loop
     function animate() {
       requestAnimationFrame(animate);
-      controls.update();
       renderer.render(scene, camera);
     }
     animate();
   }
 
-  function onWindowResize3D() {
+  function setup3DInteractions(canvas) {
+    canvas.addEventListener('mousedown', (e)=>{
+      isDragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      startTheta = orbit.theta;
+      startPhi = orbit.phi;
+    });
+    window.addEventListener('mousemove', (e)=>{
+      if (!isDragging) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      const rotSpeed = 0.005;
+      orbit.theta = startTheta - dx * rotSpeed;
+      orbit.phi   = startPhi   - dy * rotSpeed;
+      const eps = 0.1;
+      orbit.phi = Math.max(eps, Math.min(Math.PI-eps, orbit.phi));
+      updateCameraFromOrbit();
+    });
+    window.addEventListener('mouseup', ()=>{ isDragging=false; });
+    canvas.addEventListener('wheel', (e)=>{
+      e.preventDefault();
+      const zoomFactor = 1 + Math.sign(e.deltaY) * 0.1;
+      orbit.radius *= zoomFactor;
+      orbit.radius = Math.max(2, Math.min(100, orbit.radius));
+      updateCameraFromOrbit();
+    }, {passive:false});
+  }
+
+  function updateCameraFromOrbit() {
+    if (!camera) return;
+    const {radius, theta, phi, target} = orbit;
+    const x = target.x + radius * Math.sin(phi) * Math.cos(theta);
+    const y = target.y + radius * Math.cos(phi);
+    const z = target.z + radius * Math.sin(phi) * Math.sin(theta);
+    camera.position.set(x,y,z);
+    camera.lookAt(target);
+  }
+
+  function onResize3D() {
     if (!renderer || !camera) return;
     const container = document.getElementById('view3D');
     const w = container.clientWidth || 580;
     const h = container.clientHeight || 260;
-    camera.aspect = w / h;
+    camera.aspect = w/h;
     camera.updateProjectionMatrix();
-    renderer.setSize(w, h);
+    renderer.setSize(w,h);
   }
 
   function clearGroup(group) {
-    while (group.children.length > 0) {
+    while (group && group.children.length > 0) {
       const obj = group.children[0];
       group.remove(obj);
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) {
-        if (Array.isArray(obj.material)) {
-          obj.material.forEach(m => m.dispose());
-        } else {
-          obj.material.dispose();
-        }
+        if (Array.isArray(obj.material)) obj.material.forEach(m=>m.dispose());
+        else obj.material.dispose();
       }
     }
   }
 
-  function update3DGeometry() {
-    if (!plenumGroup) return;
+  // Add simple illustrative streamlines, dark blue, more lines, starting at inlet
+  function addStreamlines(plenumGroup, dims){
+    const {Ls, Hs, Ws, xHSs, baseLen, baseWidth, yBase, finHeight} = dims;
 
+    const nStream = 36; // roughly triple previous density
+    const streamMat = new THREE.LineBasicMaterial({color:0x1d4ed8, linewidth:1});
+
+    const xInletCenter = -Ls/2 - 0.02*Ls;  // center of inlet block
+    const xInletFace   = -Ls/2;            // plenum inner face
+    const xEnter       = xInletFace + 0.04*Ls; // a bit into plenum
+
+    const xFront       = xHSs - baseLen/2;
+    const xFront2      = xFront + 0.25*baseLen;
+    const xExit        = xHSs + baseLen/2;
+    const xFar         = Ls/2; // far end of plenum
+
+    const yMid   = 0;
+    const yChan  = yBase + finHeight*0.4;
+    const yAbove = yBase + finHeight + 0.35*Hs;
+
+    const fracHS = Math.max(0, Math.min(1, baseWidth / Math.max(Ws, 1e-6)));
+
+    let nCore = Math.round(nStream * fracHS * 0.7);
+    let nTop  = Math.round(nStream * 0.2);
+    let nSide = nStream - nCore - nTop;
+
+    if (nCore < 8)  nCore = 8;
+    if (nTop < 4)   nTop  = 4;
+    if (nSide < 4)  nSide = 4;
+
+    const total = nCore + nTop + nSide;
+    if (total > nStream){
+      const scale = nStream / total;
+      nCore = Math.max(6, Math.round(nCore*scale));
+      nTop  = Math.max(3, Math.round(nTop*scale));
+      nSide = Math.max(3, nStream - nCore - nTop);
+    }
+
+    const zHSmin = -baseWidth/2;
+    const zHSmax =  baseWidth/2;
+    const zWallL = -Ws/2;
+    const zWallR =  Ws/2;
+
+    // --- Core: through fins ---
+    for (let i=0; i<nCore; i++){
+      const frac = (i+0.5)/nCore;
+      const zSeed = zHSmin + frac*(zHSmax - zHSmin);
+
+      const points = [];
+      const nPts = 48;
+      for (let k=0;k<nPts;k++){
+        const p = k/(nPts-1);
+        let x, y, z = zSeed;
+
+        if (p < 0.20){
+          const t = p/0.20;
+          x = xInletCenter + (xEnter - xInletCenter)*t;
+          y = yMid;
+        } else if (p < 0.45){
+          const t = (p-0.20)/0.25;
+          x = xEnter + (xFront - xEnter)*t;
+          y = yMid;
+        } else if (p < 0.65){
+          const t = (p-0.45)/0.20;
+          x = xFront + (xFront2 - xFront)*t;
+          y = yMid + (yChan - yMid)*t;
+        } else {
+          const t = (p-0.65)/0.35;
+          x = xFront2 + (xExit - xFront2)*t;
+          y = yChan;
+        }
+
+        let swirlAmp = 0.08*Ws;
+        z += swirlAmp * Math.sin(Math.PI * p);
+        points.push(new THREE.Vector3(x,y,z));
+      }
+
+      const geom = new THREE.BufferGeometry().setFromPoints(points);
+      const line = new THREE.Line(geom, streamMat);
+      plenumGroup.add(line);
+    }
+
+    // --- Top-bypass: up and over fins ---
+    for (let i=0; i<nTop; i++){
+      const frac = (i+0.5)/nTop;
+      const zSeed = zHSmin + frac*(zHSmax - zHSmin);
+
+      const points = [];
+      const nPts = 40;
+      for (let k=0;k<nPts;k++){
+        const p = k/(nPts-1);
+        let x, y, z = zSeed;
+
+        if (p < 0.35){
+          const t = p/0.35;
+          x = xInletCenter + (xEnter - xInletCenter)*t;
+          y = yMid + (yAbove - yMid)*t;
+        } else if (p < 0.75){
+          const t = (p-0.35)/0.40;
+          x = xEnter + (xFront - xEnter)*t;
+          y = yAbove;
+        } else {
+          const t = (p-0.75)/0.25;
+          x = xFront + (xFar - xFront)*t;
+          y = yAbove;
+        }
+
+        let mildSide = 0.15*Ws * (frac - 0.5);
+        z += mildSide * p;
+        points.push(new THREE.Vector3(x,y,z));
+      }
+
+      const geom = new THREE.BufferGeometry().setFromPoints(points);
+      const line = new THREE.Line(geom, streamMat);
+      plenumGroup.add(line);
+    }
+
+    // --- Side-bypass: sideways sweep toward side walls + some rise ---
+    for (let i=0; i<nSide; i++){
+      const frac = (i+0.5)/nSide;
+      const goRight = (i % 2 === 0);
+
+      const zStartBandMin = zHSmin;
+      const zStartBandMax = zHSmax;
+      const zSeed0 = zStartBandMin + frac*(zStartBandMax - zStartBandMin);
+      const zTarget = goRight ? zWallR*0.9 : zWallL*0.9;
+
+      const points = [];
+      const nPts = 44;
+      for (let k=0;k<nPts;k++){
+        const p = k/(nPts-1);
+        let x, y, z;
+
+        if (p < 0.30){
+          const t = p/0.30;
+          x = xInletCenter + (xEnter - xInletCenter)*t;
+          y = yMid;
+          z = zSeed0;
+        } else if (p < 0.70){
+          const t = (p-0.30)/0.40;
+          x = xEnter + (xFront - xEnter)*t;
+          y = yMid + (yAbove - yMid)*t;
+          z = zSeed0 + (zTarget - zSeed0)*t;
+        } else {
+          const t = (p-0.70)/0.30;
+          x = xFront + (xFar - xFront)*t;
+          y = yAbove;
+          z = zTarget;
+        }
+
+        points.push(new THREE.Vector3(x,y,z));
+      }
+
+      const geom = new THREE.BufferGeometry().setFromPoints(points);
+      const line = new THREE.Line(geom, streamMat);
+      plenumGroup.add(line);
+    }
+  }
+
+  function update3DGeometry() {
+    if (!plenumGroup || !window.THREE) return;
     clearGroup(plenumGroup);
 
-    // Get geometry inputs
+    // NOTE: for visualization we just treat input lengths as generic units
     const W  = parseFloat(document.getElementById('plenumW').value) || 0.20;
     const H  = parseFloat(document.getElementById('plenumH').value) || 0.05;
     const L  = parseFloat(document.getElementById('plenumL').value) || 0.30;
@@ -751,12 +1213,12 @@
     const WHS = parseFloat(document.getElementById('WHS').value)  || W;
 
     const maxDim = Math.max(L, W, H, 0.1);
-    const scale = 10 / maxDim; // scale so geometry fits nicely
+    const scale = 10 / maxDim;
     const Ls = L * scale;
     const Ws = W * scale;
     const Hs = H * scale;
 
-    // Plenum box (wireframe + translucent)
+    // Plenum wireframe + translucent box
     const plenumGeom = new THREE.BoxGeometry(Ls, Hs, Ws);
     const plenumWire = new THREE.EdgesGeometry(plenumGeom);
     const wireMat = new THREE.LineBasicMaterial({color:0x111111});
@@ -766,59 +1228,56 @@
     const plenumMat = new THREE.MeshBasicMaterial({
       color:0xcbd5f5,
       transparent:true,
-      opacity:0.08,
+      opacity:0.12,
       depthWrite:false
     });
     const plenumMesh = new THREE.Mesh(plenumGeom, plenumMat);
     plenumGroup.add(plenumMesh);
 
-    // Inlet on one side (front x ~ -Ls/2)
+    // Inlet block
     const AinW = Math.min(wIn, L) * scale;
     const AinH = Math.min(hIn, H) * scale;
-    const inletGeom = new THREE.BoxGeometry(0.02*Ls, AinH, AinW);
+    const inletGeom = new THREE.BoxGeometry(0.04*Ls, AinH, AinW);
     const inletMat = new THREE.MeshBasicMaterial({color:0x4b5563});
     const inletMesh = new THREE.Mesh(inletGeom, inletMat);
-
-    inletMesh.position.set(-Ls/2 - 0.01*Ls, 0, 0); // centered in H & W
+    inletMesh.position.set(-Ls/2 - 0.02*Ls, 0, 0);
     plenumGroup.add(inletMesh);
 
-    // Heat sink base & fins
+    let xHSs = 0, yBase = 0, baseLen = 0, baseWidth = 0, finHeight = 0;
+
+    // Base plate + fins (if defined)
     if (b > 0 && Lf > 0 && WHS > 0) {
-      const baseThickness = 0.003 * scale * maxDim; // small base
-      const baseGeom = new THREE.BoxGeometry(
-        Math.min(Lf, L - xHS) * scale,
-        baseThickness,
-        Math.min(WHS, W) * scale
-      );
+      const baseThickness = 0.03 * Hs;
+      baseLen   = Math.min(Lf, L - xHS) * scale;
+      baseWidth = Math.min(WHS, W) * scale;
+
+      const baseGeom = new THREE.BoxGeometry(baseLen, baseThickness, baseWidth);
       const baseMat = new THREE.MeshPhongMaterial({color:0x9ca3af});
       const baseMesh = new THREE.Mesh(baseGeom, baseMat);
-
-      const xHSs = (-Ls/2) + xHS * scale + baseGeom.parameters.width/2;
-      const yBase = -Hs/2 + baseThickness/2;
+      xHSs = (-Ls/2) + xHS * scale + baseLen/2;
+      yBase = -Hs/2 + baseThickness/2;
       baseMesh.position.set(xHSs, yBase, 0);
       plenumGroup.add(baseMesh);
 
-      // Fins
       const pitch = s + t;
       if (pitch > 0) {
         let Nch = Math.floor((WHS + s) / pitch);
         if (Nch < 1) Nch = 1;
-        const maxFinsToDraw = 60; // limit for performance
+        const maxFinsToDraw = 60;
         const drawEvery = Math.max(1, Math.floor(Nch / maxFinsToDraw));
 
-        const finHeight = Math.min(b, H) * scale;
+        finHeight = Math.min(b, H) * scale;
         const finThick = t * scale;
-        const finLen = baseGeom.parameters.width; // along x
-        const WfinTotal = Math.min(WHS, W) * scale;
+        const finLen = baseLen;
+        const WfinTotal = baseWidth;
 
         for (let i=0; i<Nch; i+=drawEvery) {
           const z0 = -WfinTotal/2 + (i + 0.5) * pitch * scale;
           if (z0 < -WfinTotal/2 || z0 > WfinTotal/2) continue;
 
           const finGeom = new THREE.BoxGeometry(finLen, finHeight, finThick);
-          const finMat = new THREE.MeshPhongMaterial({color:0x2563eb});
+          const finMat  = new THREE.MeshPhongMaterial({color:0x2563eb});
           const finMesh = new THREE.Mesh(finGeom, finMat);
-
           const yFin = yBase + baseThickness/2 + finHeight/2;
           finMesh.position.set(xHSs, yFin, z0);
           plenumGroup.add(finMesh);
@@ -826,25 +1285,37 @@
       }
     }
 
-    // Recenter group (already centered, but just in case)
-    plenumGroup.position.set(0,0,0);
+    // Add illustrative streamlines (only if we have a heat sink region)
+    if (baseLen > 0 && baseWidth > 0 && finHeight > 0) {
+      addStreamlines(plenumGroup, {Ls, Hs, Ws, xHSs, baseLen, baseWidth, yBase, finHeight});
+    }
+
+    if (camera) {
+      const box = new THREE.Box3().setFromObject(plenumGroup);
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(center);
+      const maxSize = Math.max(size.x, size.y, size.z);
+      orbit.target.copy(center);
+      orbit.radius = maxSize * 1.8;
+      camera.near = orbit.radius / 50;
+      camera.far  = orbit.radius * 50;
+      camera.updateProjectionMatrix();
+      updateCameraFromOrbit();
+    }
   }
 
-  // Initialize 3D once DOM is ready
   window.addEventListener('load', () => {
     init3D();
   });
 
-  // Update 3D when geometry changes
   const geomIds = [
     'plenumW','plenumH','plenumL',
-    'inletW','inletH',
-    'xHS','Lfin','b','WHS','sfin','tfin'
+    'inletW','inletH','xHS','Lfin','b','WHS','sfin','tfin'
   ];
   geomIds.forEach(id=>{
-    document.getElementById(id).addEventListener('input', () => {
-      update3DGeometry();
-    });
+    document.getElementById(id).addEventListener('input', update3DGeometry);
   });
 </script>
 </body>
